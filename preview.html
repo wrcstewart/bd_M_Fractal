@@ -1,0 +1,1384 @@
+<!-- ButterflyDreaming Fractal Music Module — preview / standalone harness.
+     Adapted from bd_M_ABC/preview.html (2026-08-06). Structurally identical
+     harness; DEFAULT_SCRIPT is a Hilbert-curve L-system grammar rather than
+     an ABC score. The module derives the ABC internally and shows it in a
+     read-only pane inside its title-square slot. -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ButterflyDreaming — bd_M_Fractal preview</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html, body {
+      height: 100%;
+      overflow: hidden;
+    }
+
+    body {
+      background: #0a0a0f;
+      color: #e8e8e0;
+      font-family: Georgia, 'Times New Roman', serif;
+      display: flex;
+      flex-direction: column;
+      padding-bottom: 36px;   /* reserve space for the fixed #bd-bar */
+    }
+
+    /* Fixed bottom bar — source context (left) + Enter ButterflyDreaming
+       button (right). Sits above the module + side panel via z-index. */
+    #bd-bar {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      width: 100%;
+      height: 36px;
+      background: #0a0a1a;
+      border-top: 1px solid #333;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 16px;
+      font-size: 12px;
+      color: #888888;
+      box-sizing: border-box;
+      z-index: 1000;
+      font-family: sans-serif;
+    }
+
+    #bd-source-context {
+      color: #888888;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      flex: 1 1 auto;
+      margin-right: 12px;
+    }
+
+    /* Inline audio player at the right end of #bd-bar. STANDALONE MUSIC:
+       hidden by default (was pre-populated with 3 Chinese-music tracks in
+       Kolam's preview but those files don't exist in this repo, and for the
+       music standalone it doesn't make sense to auto-offer them). Appears
+       when the module bakes an mp3 → BD_MEDIA_BLOB → session track added. */
+    #ev-media-bar {
+      display: none;
+      align-items: center;
+      gap: 4px;
+      flex: 0 0 auto;
+    }
+    #ev-media-bar.active { display: flex; }
+    #ev-media-select {
+      background: #1a1a2a;
+      color: #cccccc;
+      border: 1px solid #444;
+      border-radius: 3px;
+      font-family: sans-serif;
+      font-size: 11px;
+      padding: 2px 4px;
+      max-width: 110px;
+    }
+    #ev-media-btn {
+      background: #1a1a2a;
+      color: #cccccc;
+      border: 1px solid #444;
+      border-radius: 3px;
+      cursor: pointer;
+      font-size: 13px;
+      line-height: 1;
+      padding: 2px 8px;
+      min-width: 30px;
+    }
+    #ev-media-btn:hover  { background: #23233a; color: #fff; }
+    #ev-media-btn:active { background: #2f2f4a; }
+
+    /* Invitation panel (2026-07-11) — floats above #bd-bar. Shown only when
+       Edit is toggled on; hidden in basic mode. Contains an explainer
+       sentence and two stacked call-to-action buttons (Jump In on top,
+       Copy Link below). Right-aligned on landscape, spans further left on
+       narrow / portrait so the text has room to breathe. */
+    #bd-invite-panel {
+      position: fixed;
+      bottom: 34px;                  /* was 44 (36 px bar + 8 px gap);
+                                        dropped 10 px 2026-07-11 so panel top
+                                        clears the side-panel action row. */
+      right: 8px;
+      max-width: 208px;              /* -20 % from 260 px (2026-07-11);
+                                        panel shrunk after Copy Link removed */
+      padding: 10px 12px;
+      background: rgba(10, 10, 26, 0.95);
+      border: 1px solid #333;
+      border-radius: 6px;
+      color: #ccc;
+      font-family: sans-serif;
+      font-size: 12px;
+      line-height: 1.35;
+      z-index: 1001;
+      display: none;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.6);
+    }
+
+    body:not(.ev-basic) #bd-invite-panel { display: block; }
+
+    #bd-invite-text {
+      margin: 0 0 10px 0;
+      color: #ccc;
+      text-align: center;
+    }
+
+    #bd-actions {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    /* Jump to — solid muted amber. Darker/less saturated than the earlier
+       #FFD700 so it reads as invitation, not alarm. */
+    #bd-enter-btn {
+      background: #a07820;
+      color: #0a0a1a;
+      border: none;
+      border-radius: 3px;
+      padding: 6px 10px;
+      font-size: 12px;
+      cursor: pointer;
+      font-weight: bold;
+      font-family: sans-serif;
+    }
+
+    #bd-enter-btn:hover {
+      background: #c9a227;
+    }
+
+    /* Copy Link to — outlined muted amber, secondary. */
+    #bd-copy-link-btn {
+      background: transparent;
+      color: #a07820;
+      border: 1px solid #a07820;
+      border-radius: 3px;
+      padding: 5px 10px;             /* -1 px vertical to compensate for the border */
+      font-size: 12px;
+      cursor: pointer;
+      font-weight: bold;
+      font-family: sans-serif;
+    }
+
+    #bd-copy-link-btn:hover {
+      background: rgba(160, 120, 32, 0.15);
+      color: #c9a227;
+      border-color: #c9a227;
+    }
+
+    /* Modal overlay — Copy Link update-script confirm (2026-07-15) */
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.6);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+      font-family: sans-serif;
+    }
+    .modal-overlay[hidden] { display: none; }
+    .modal-box {
+      background: #1a1a20;
+      border: 1px solid #a07820;
+      border-radius: 6px;
+      padding: 18px 20px;
+      max-width: 380px;
+      width: calc(100vw - 40px);
+      color: #e8e8e0;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
+    }
+    .modal-heading {
+      margin: 0 0 8px 0;
+      font-size: 15px;
+      font-weight: bold;
+      color: #ffd88a;
+    }
+    .modal-body {
+      margin: 0 0 14px 0;
+      font-size: 13px;
+      line-height: 1.4;
+      color: #cfcfc4;
+    }
+    .modal-buttons {
+      display: flex;
+      gap: 8px;
+      justify-content: flex-end;
+      flex-wrap: wrap;
+    }
+    .modal-buttons button {
+      background: #3d2e00;
+      color: #ffd88a;
+      border: 1px solid #a07820;
+      border-radius: 3px;
+      padding: 6px 12px;
+      font-size: 13px;
+      cursor: pointer;
+      font-family: sans-serif;
+    }
+    .modal-buttons button:hover {
+      background: rgba(160, 120, 32, 0.2);
+      color: #fff;
+      border-color: #c9a227;
+    }
+    .modal-check {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: 12px;
+      font-size: 12px;
+      color: #a09a8a;
+      cursor: pointer;
+    }
+    .modal-check input {
+      cursor: pointer;
+      accent-color: #a07820;
+    }
+
+    /* The target of both verb-buttons above — sits below them so the panel
+       reads as "Jump to Butterfly Dreaming" / "Copy Link to Butterfly
+       Dreaming". Italic + dark amber marks it as the shared object. */
+    #bd-invite-target {
+      margin: 8px 0 0 0;
+      text-align: center;
+      color: #d4a017;
+      font-family: 'Georgia', 'Times New Roman', serif;
+      font-size: 14px;
+      font-weight: bold;
+      font-style: italic;
+      letter-spacing: 0.02em;
+    }
+
+    /* MM2 (2026-07-11) — EV control cluster on the LEFT side of the bar
+       (Freeze, Edit, ◀ Prev, Next ▶). Muted grey-outlined so they read
+       as local-action controls, distinct from the gold BD-return
+       cluster on the right. */
+    #ev-actions {
+      display: flex;
+      gap: 6px;
+      flex: 0 0 auto;
+      margin-right: 12px;
+    }
+
+    #ev-actions button {
+      background: transparent;
+      color: #ccc;
+      border: 1px solid #666;
+      border-radius: 3px;
+      padding: 3px 10px;
+      font-size: 11px;
+      cursor: pointer;
+      font-family: sans-serif;
+      flex: 0 0 auto;
+      min-width: 34px;
+    }
+
+    #ev-actions button:hover:not(:disabled) {
+      color: #fff;
+      border-color: #ccc;
+    }
+
+    #ev-actions button:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+
+    /* Active-toggle state for Freeze and Edit — highlight when on. */
+    #ev-actions button.active {
+      background: rgba(255, 215, 0, 0.15);
+      color: #FFD700;
+      border-color: #FFD700;
+    }
+
+    /* Basic mode (default on load): side panel hidden, canvas full width.
+       Edit button toggles body.ev-editing to reveal the panel. Side panel
+       stays laid out via existing flex; no width tweaks needed. */
+    body.ev-basic .side-panel { display: none; }
+
+    .layout {
+      flex: 1;
+      display: flex;
+      flex-direction: row;
+      min-height: 0;
+      min-width: 0;
+    }
+
+    .module-column {
+      flex: 1 1 auto;
+      min-width: 0;
+      min-height: 0;
+      display: flex;
+    }
+
+    #module-frame {
+      flex: 1;
+      border: none;
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+
+    /* Single side panel — textarea → buttons → steppers, scrollable.
+       Width picked so the four-button action row (Copy Link · Copy · ↓ · ↑)
+       fits on a single line without wrapping. */
+    .side-panel {
+      flex: 0 0 320px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      padding: 8px;
+      background: rgba(15, 15, 24, 0.75);
+      border-left: 1px solid rgba(74, 155, 142, 0.2);
+      overflow-y: auto;
+      min-height: 0;
+    }
+
+    /* Portrait / narrow viewport — stack panel ABOVE module (user 2026-08-05:
+       "on the ios edit screen you put the script panel and the Copy Link
+       Copy up down arrows below the play etc buttons and the steppers —
+       all the other players have the script above the player"). Use
+       column-reverse so DOM order stays module → panel but the visual
+       stack shows panel on top on portrait. Border swaps from border-top
+       to border-bottom because the panel now separates itself from the
+       module below it, not above.
+       #bd-invite-panel repositions to the bottom-right of the side-panel
+       area — sits alongside the status readout ("Module ready.") in the
+       empty space below the Copy Link / Copy / ↓ / ↑ action row. That
+       band lives at the very bottom of side-panel (side-panel is 45vh
+       tall, so its bottom edge is at 55vh from viewport bottom). Keeps
+       the panel's full landscape geometry (208 px wide, explainer text
+       intact) — user wanted "revert the format of the invite panel and
+       buttons to as before". */
+    @media (max-aspect-ratio: 1/1) {
+      .layout { flex-direction: column-reverse; }
+      .side-panel {
+        flex: 0 0 45vh;
+        border-left: none;
+        border-bottom: 1px solid rgba(74, 155, 142, 0.2);
+      }
+      #bd-invite-panel {
+        top: auto;
+        bottom: calc(55vh + 4px);
+        right: 8px;
+      }
+    }
+
+    #script-input {
+      width: 100%;
+      min-height: 160px;
+      background: #0f0f18;
+      color: #cfcfc4;                     /* slightly desaturated from #e8e8e0 —
+                                             non-editable read cue (2026-07-15) */
+      border: 1px solid #2a2a3a;
+      border-bottom: 5px solid #5a4020;   /* dark-amber demarcator strip (2026-07-02) */
+      border-radius: 3px;
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 16px;              /* ≥16 px avoids iOS auto-zoom on focus */
+      line-height: 1.45;
+      padding: 8px;
+      resize: vertical;
+      outline: none;
+      flex: 0 0 auto;
+      margin-bottom: 7px;           /* small gap between amber bar and action row */
+      cursor: default;              /* not text-cursor — signals non-typable */
+    }
+    #script-input:focus { border-color: #4a9b8e; border-bottom-color: #5a4020; }
+
+    /* Action row: Copy Link / Copy / ↓ / ↑ on one line; flex-wrap for narrow. */
+    .action-bar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      flex: 0 0 auto;
+    }
+
+    .action-bar button {
+      background: #0f0f18;
+      border: 1px solid #4a9b8e;
+      color: #4a9b8e;
+      cursor: pointer;
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 0.85rem;
+      letter-spacing: 0.03em;
+      padding: 6px 10px;
+      border-radius: 3px;
+      user-select: none;
+      -webkit-user-select: none;
+      -webkit-touch-callout: none;
+      -webkit-tap-highlight-color: transparent;
+      touch-action: manipulation;
+      flex: 1 1 auto;
+    }
+    .action-bar button.arrow {
+      font-size: 1rem;
+      padding: 6px 12px;
+      flex: 0 0 44px;
+    }
+    .action-bar button:hover  { background: #1a2a28; }
+    .action-bar button:active { background: #243f3b; }
+    .action-bar button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    /* 2026-07-17 — the side-panel Copy Link is the primary sharing
+       action (produces the URL a user would paste into a message /
+       another device). Given filled amber to stand out from the
+       teal-outlined siblings (Copy / ↓ / ↑) and echo the invite-
+       panel's #bd-enter-btn palette. */
+    #copy-link-btn {
+      background: #a07820;
+      color: #0a0a1a;
+      border: 1px solid #a07820;
+      font-weight: bold;
+    }
+    #copy-link-btn:hover  { background: #c9a227; border-color: #c9a227; color: #0a0a1a; }
+    #copy-link-btn:active { background: #8a6618; border-color: #8a6618; }
+
+    #status {
+      font-size: 0.75rem;
+      font-style: italic;
+      color: #9e9e90;
+      padding: 4px 6px;
+      min-height: 1.6em;
+      flex: 0 0 auto;
+      border-top: 1px solid rgba(74, 155, 142, 0.15);
+      padding-top: 6px;
+    }
+
+    /* Stepper column — one cell per %%bd_ numeric-arg directive, stacked
+       vertically down the side panel. Mirrors the media-module control
+       convention (see feedback_media_module_controls). */
+    .stepper-column {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      padding-top: 4px;
+      border-top: 1px solid rgba(74, 155, 142, 0.15);
+      flex: 0 0 auto;
+    }
+
+    .control-row {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      width: 100%;
+      max-width: 200px;
+    }
+
+    .control-row label {
+      font-size: 0.7rem;
+      letter-spacing: 0.02em;
+      color: #4a9b8e;
+      text-align: center;
+      font-family: 'Courier New', Courier, monospace;
+      user-select: none;
+      -webkit-user-select: none;
+      -webkit-touch-callout: none;
+    }
+
+    .stepper {
+      display: flex;
+      align-items: stretch;
+      justify-content: space-between;
+      gap: 3px;
+    }
+
+    .step-btn {
+      background: #0f0f18;
+      border: 1px solid #4a9b8e;
+      color: #4a9b8e;
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 1rem;
+      padding: 0;
+      width: 32px;
+      height: 28px;
+      line-height: 1;
+      cursor: pointer;
+      border-radius: 3px;
+      flex: 0 0 auto;
+      touch-action: manipulation;
+      user-select: none;
+      -webkit-user-select: none;
+      -webkit-touch-callout: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .step-btn:hover  { background: #1a2a28; }
+    .step-btn:active { background: #243f3b; }
+    .step-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    .stepper-value {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 0.85rem;
+      color: #e8e8e0;
+      background: #0f0f18;
+      border: 1px solid #2a2a3a;
+      padding: 2px;
+      border-radius: 3px;
+      min-width: 0;
+      user-select: none;
+      -webkit-user-select: none;
+      -webkit-touch-callout: none;
+    }
+  </style>
+</head>
+<body class="ev-basic">
+
+  <div class="layout">
+    <div class="module-column">
+      <iframe id="module-frame"
+              src="music_module.html"
+              title="ButterflyDreaming Music Module"></iframe>
+    </div>
+
+    <aside class="side-panel">
+      <!-- 2026-07-15 (Op 2, content-moderation) — readonly. The script must
+           only be modified via the sliders below (structured, template-bounded
+           edits). Keyboard typing would introduce arbitrary text into the
+           payload that Copy-Link-back-to-BD carries, and BD's receiver would
+           have no way to distinguish typed content from slider-derived
+           content. Sliders continue to write to .value programmatically. -->
+      <textarea id="script-input" spellcheck="false" readonly
+                title="Read-only — use the sliders below to modify the script"></textarea>
+      <div class="action-bar">
+        <button id="copy-link-btn" title="Copy a shareable URL that reproduces this script">Copy Link</button>
+        <button id="copy-btn"      title="Copy the script to the clipboard">Copy</button>
+        <button id="send-btn"      class="arrow" title="Send script → module">↓</button>
+        <button id="receive-btn"   class="arrow" title="Request module state → script">↑</button>
+      </div>
+      <div id="stepper-column" class="stepper-column"><!-- steppers injected --></div>
+      <div id="status">Loading module…</div>
+    </aside>
+  </div>
+
+  <div id="bd-bar">
+    <div id="ev-actions">
+      <button id="ev-edit-btn"   type="button" title="Show or hide the script editor">Edit</button>
+      <!-- ◀/▶ Prev/Next removed 2026-07-17: relied on BD's /api/module-sibling
+           endpoint, not available in the standalone GitHub Pages deployment. -->
+    </div>
+    <span id="bd-source-context"></span>
+    <!-- 2026-07-18 — inline audio player, right end of #bd-bar. Hardcoded
+         track list (EV has no file-discovery API); preload="none" so the
+         60+ MB tracks don't download on page load. -->
+    <div id="ev-media-bar">
+      <!-- Options injected on the fly by the BD_MEDIA_BLOB handler each time
+           the music module bakes a new mp3. Empty at page load. -->
+      <select id="ev-media-select" title="Choose baked track"></select>
+      <button id="ev-media-btn" type="button" aria-label="play/pause">▶</button>
+      <audio id="ev-media-audio" preload="none"></audio>
+    </div>
+  </div>
+
+  <!-- Invitation panel: shown only when Edit is toggled on (body loses the
+       ev-basic class). Structure reads as a sentence — the two verb-buttons
+       above share the italic "Butterfly Dreaming" as their object. Also
+       resolves the naming conflict with the side-panel's Copy Link (which
+       copies the standalone-EV URL, not the BD-return URL). -->
+  <aside id="bd-invite-panel">
+    <p id="bd-invite-text">You can use our Platform to explore, collaborate and save</p>
+    <div id="bd-actions">
+      <button id="bd-enter-btn"     type="button" title="Return to ButterflyDreaming carrying the current script">Jump to</button>
+      <button id="bd-copy-link-btn" type="button" title="Copy a BD-return link to the clipboard">Copy Link to</button>
+    </div>
+    <p id="bd-invite-target">Butterfly Dreaming</p>
+  </aside>
+
+  <!-- 2026-07-15 — Copy-Link confirm dialog. Sliders write to the script
+       textarea immediately, but the module's live drift ticks (angle /
+       angle_minutes) don't. So the script may be stale relative to what the
+       user is actually seeing. Gate on Copy-Link presses (both the side-
+       panel #copy-link-btn and the invite-panel #bd-copy-link-btn) via
+       withUpdatePrompt() — it either shows this dialog, auto-updates, or
+       skips based on the user's remembered choice (localStorage). -->
+  <div id="update-script-dialog" class="modal-overlay" hidden>
+    <div class="modal-box">
+      <p class="modal-heading">Should I update the script?</p>
+      <p class="modal-body">The settings may have changed since the last sync — update the script from the module before copying the link?</p>
+      <div class="modal-buttons">
+        <button id="update-script-yes" type="button">Yes, update</button>
+        <button id="update-script-no"  type="button">It&rsquo;s already updated</button>
+      </div>
+      <label class="modal-check">
+        <input type="checkbox" id="update-script-remember"> Don&rsquo;t ask again this session
+      </label>
+    </div>
+  </div>
+
+  <script>
+    'use strict';
+
+    // ── Element refs ──────────────────────────────────────────────────────────
+    const textarea    = document.getElementById('script-input');
+    const sendBtn     = document.getElementById('send-btn');
+    const receiveBtn  = document.getElementById('receive-btn');
+    const copyBtn     = document.getElementById('copy-btn');
+    const copyLinkBtn = document.getElementById('copy-link-btn');
+    const statusEl    = document.getElementById('status');
+    const moduleFrame = document.getElementById('module-frame');
+    const stepperCol  = document.getElementById('stepper-column');
+
+    let moduleReady   = false;
+    let pendingScript = null;
+    const setStatus   = (text) => { statusEl.textContent = text; };
+
+    const postToModule = (message) => {
+      if (!moduleFrame.contentWindow) return;
+      moduleFrame.contentWindow.postMessage(message, '*');
+    };
+
+    // ── EV state (MM2, 2026-07-11) ────────────────────────────────────────────
+    // Current script + node context. Updated on initial load, on ?data= arrival,
+    // and on Prev/Next navigation. buildBdReturnUrl reads these directly so
+    // Enter BD / Copy BD Link carry the currently-displayed node, not the
+    // one we originally arrived from.
+    let currentScript      = '';
+    let currentNodeUrl     = null;
+    let currentSourceText  = null;
+    let currentTitle       = null;
+    let currentName        = null;
+
+    // Virtual-start state + Prev/Next sibling navigation retired 2026-07-17
+    // when EV moved to a standalone GitHub Pages deployment. Both features
+    // depended on BD's /api/module-sibling + /api/module-default endpoints,
+    // which don't exist in the Pages-hosted build.
+    // Freeze state retired 2026-08-05 for the music module (no animation).
+
+    // moduleId + getModuleIdFromPath retired 2026-07-17 — was only read
+    // by the (now-retired) /api/module-default + /api/module-sibling fetches.
+    // No live code path uses the module id any more. Left as breadcrumb
+    // for anyone tracing why URL path parsing disappeared.
+
+    // ── Default script ────────────────────────────────────────────────────────
+    // Hilbert curve L-system (Prusinkiewicz, "The Algorithmic Beauty of
+    // Plants"). Iteration 3 produces ~84 turtle steps → ~42 notes at 0.5 s
+    // each → ~40 second piece in the natural-minor scale rooted on C.
+    // No %%bd_score block — the module derives ABC from these directives.
+    const DEFAULT_SCRIPT = `%%bd_module bd_M_Fractal
+%%bd_axiom A
+%%bd_rule A: -BF+AFA+FB-
+%%bd_rule B: +AF-BFB-FA+
+%%bd_iterations 3
+%%bd_angle 90
+%%bd_scale minor
+%%bd_root C
+%%bd_step_seconds 0.5
+%%bd_vertical_time 0.5`;
+
+    // Music preview has NO outer stepper column — the music module already
+    // exposes its 8 %%bd_ params via its own right-side stepper column
+    // and doesn't need duplication in the harness. The STEPPERS array is
+    // kept empty so downstream code (syncSteppersFromScript, stepControl,
+    // pointerdown handler) all no-op cleanly.
+    const STEPPERS = [];
+
+    // Build the stepper DOM.
+    STEPPERS.forEach((s) => {
+      const row = document.createElement('div');
+      row.className = 'control-row';
+      row.innerHTML = `
+        <div class="stepper">
+          <button class="step-btn" type="button" data-name="${s.name}" data-delta="-1">−</button>
+          <span class="stepper-value" data-name="${s.name}">${s.fallback}</span>
+          <button class="step-btn" type="button" data-name="${s.name}" data-delta="1">+</button>
+        </div>
+        <label>${s.name}</label>
+      `;
+      stepperCol.appendChild(row);
+    });
+
+    // ── Script <-> stepper sync ───────────────────────────────────────────────
+    // Regex-based directive read/write. We don't need the full BD parser here —
+    // just find %%bd_<name> <value> lines. Score block (%%bd_score [ … %%bd_])
+    // is preserved verbatim because we never touch it.
+    function readDirective(scriptText, name) {
+      const re = new RegExp(`^%%bd_${name}\\s+(.+)$`, 'm');
+      const m = scriptText.match(re);
+      return m ? m[1].trim() : null;
+    }
+
+    function writeDirective(scriptText, name, value) {
+      const re = new RegExp(`^%%bd_${name}\\s+.+$`, 'm');
+      const newLine = `%%bd_${name} ${value}`;
+      if (re.test(scriptText)) return scriptText.replace(re, newLine);
+      // Insert before %%bd_score if missing.
+      const scoreIdx = scriptText.indexOf('%%bd_score');
+      if (scoreIdx !== -1) {
+        return scriptText.slice(0, scoreIdx) + newLine + '\n' + scriptText.slice(scoreIdx);
+      }
+      return scriptText + '\n' + newLine;
+    }
+
+    function syncSteppersFromScript(scriptText) {
+      STEPPERS.forEach((s) => {
+        const raw = readDirective(scriptText, s.name);
+        let uiVal;
+        if (raw === null) {
+          uiVal = s.fallback;
+        } else if (s.fromDirective) {
+          uiVal = s.fromDirective(raw);
+        } else {
+          uiVal = Number(raw);
+        }
+        if (!Number.isFinite(uiVal)) uiVal = s.fallback;
+        uiVal = Math.max(s.min, Math.min(s.max, uiVal));
+        const span = stepperCol.querySelector(`.stepper-value[data-name="${s.name}"]`);
+        if (span) span.textContent = formatValue(uiVal, s.step);
+      });
+    }
+
+    function formatValue(v, step) {
+      if (step >= 1) return String(Math.round(v));
+      // step < 1 → up to 2 decimal places.
+      return String(Math.round(v * 100) / 100);
+    }
+
+    function stepControl(name, delta) {
+      const s = STEPPERS.find((x) => x.name === name);
+      if (!s) return;
+      const span = stepperCol.querySelector(`.stepper-value[data-name="${name}"]`);
+      const cur = parseFloat(span.textContent);
+      let next = (Number.isFinite(cur) ? cur : s.fallback) + delta * s.step;
+      next = Math.max(s.min, Math.min(s.max, next));
+      next = parseFloat(next.toFixed(4));
+      const uiStr  = formatValue(next, s.step);
+      if (span.textContent === uiStr) return;      // hit min/max, no change
+      span.textContent = uiStr;
+      const dirVal = s.toDirective ? s.toDirective(next) : uiStr;
+      // 2026-07-15 — sliders no longer auto-write the script textarea. The
+      // textarea reflects the last COMMITTED script (from loadScript /
+      // bd_script_response / ↓ Send). Slider changes go straight to the
+      // module via `currentScript` as a live-state mirror. The user commits
+      // by pressing ↑ (Receive) or by accepting the Copy-Link update-script
+      // dialog — either of which pulls the module state back into the
+      // textarea. Keeps ↓ Send meaningful as a "restore from committed
+      // script" action.
+      currentScript = writeDirective(currentScript, name, dirVal);
+      if (moduleReady) postToModule({ type: 'bd_script_update', script: currentScript });
+    }
+
+    // Stepper +/− wiring — pointer events, hold-to-repeat.
+    stepperCol.addEventListener('pointerdown', (event) => {
+      const btn = event.target.closest('.step-btn');
+      if (!btn || btn.disabled) return;
+      event.preventDefault();
+      try { btn.setPointerCapture(event.pointerId); } catch (_) {}
+      const name = btn.dataset.name;
+      const delta = parseFloat(btn.dataset.delta);
+      stepControl(name, delta);
+      let repeatTimer = null;
+      const holdTimer = setTimeout(() => {
+        repeatTimer = setInterval(() => stepControl(name, delta), 60);
+      }, 400);
+      const stop = () => {
+        clearTimeout(holdTimer);
+        if (repeatTimer) clearInterval(repeatTimer);
+        btn.removeEventListener('pointerup', stop);
+        btn.removeEventListener('pointercancel', stop);
+        btn.removeEventListener('pointerleave', stop);
+      };
+      btn.addEventListener('pointerup',     stop);
+      btn.addEventListener('pointercancel', stop);
+      btn.addEventListener('pointerleave',  stop);
+    });
+
+    // ── UTF-8 safe base64 (via TextEncoder/Decoder) ──────────────────────────
+    function b64EncodeUtf8(str) {
+      const bytes = new TextEncoder().encode(str);
+      let bin = '';
+      for (const b of bytes) bin += String.fromCharCode(b);
+      return btoa(bin);
+    }
+    function b64DecodeUtf8(b64) {
+      const bin = atob(b64);
+      const bytes = Uint8Array.from(bin, (c) => c.charCodeAt(0));
+      return new TextDecoder().decode(bytes);
+    }
+
+    // angle_seconds is an internal-only drift accumulator; it should never
+    // appear in the visible script. Strip it from any incoming script (URL
+    // param, bd_script_response) as a safety net against legacy content.
+    function stripAngleSeconds(text) {
+      return text.replace(/^%%bd_angle_seconds\b.*(?:\r?\n)?/gm, '');
+    }
+
+    // ── BD-return context (from ?data= payload) ──────────────────────────────
+    // When the URL was produced by the BD viewer's Copy Link button, the
+    // payload carries node_url / source_text / title alongside the script.
+    // `incomingPayload` holds the whole decoded object (including script);
+    // `bdReturnContext` is a three-field subset kept for existing consumers.
+    // window.bdReturnContext / window.incomingPayload expose them for console
+    // inspection during dev. The "Enter ButterflyDreaming" button reads
+    // incomingPayload?.node_url so the round-trip URL back to BD carries the
+    // originating node's UUID.
+    let incomingPayload = null;
+    let bdReturnContext = { node_url: null, source_text: null, title: null };
+    window.bdReturnContext = bdReturnContext;
+    window.incomingPayload = incomingPayload;
+
+    // ── Initial script (from ?data= envelope, ?script= raw, or DEFAULT) ──────
+    // Precedence:
+    //   1. ?data=<base64 JSON {script, node_url, source_text, title}>   (BD viewer Copy Link)
+    //   2. ?script=<base64 raw script text>                             (standalone Copy Link)
+    //   3. DEFAULT_SCRIPT
+    // MM2 — central script-loading function used by:
+    //   · initial page load (default from server or DEFAULT_SCRIPT)
+    //   · ?data= / ?script= URL param decode
+    //   · Prev / Next navigation
+    //   · manual Copy Down (↓)
+    // Updates textarea, steppers, module iframe, and optionally the current
+    // node metadata (source_text/title/name/node_url) for source-context
+    // display and BD-return URL construction.
+    function loadScript(script, meta = {}) {
+      const clean = stripAngleSeconds(typeof script === 'string' ? script : '');
+      currentScript = clean;
+      textarea.value = clean;
+      syncSteppersFromScript(clean);
+      if (moduleReady) postToModule({ type: 'bd_script_update', script: clean });
+      else             pendingScript = clean;
+      if (meta.node_url    !== undefined) currentNodeUrl    = meta.node_url;
+      if (meta.source_text !== undefined) currentSourceText = meta.source_text;
+      if (meta.title       !== undefined) currentTitle      = meta.title;
+      if (meta.name        !== undefined) currentName       = meta.name;
+      renderSourceContext();
+    }
+
+    // fetchModuleDefault + loadModuleDefault retired 2026-07-17. They hit
+    // BD's /api/module-default endpoint which doesn't exist in the standalone
+    // GitHub Pages deployment. Cold start (no URL params) now loads
+    // DEFAULT_SCRIPT directly.
+
+    (async function loadInitialScript() {
+      const params = new URLSearchParams(window.location.search);
+
+      const dataParam = params.get('data');
+      if (dataParam) {
+        try {
+          const payload = JSON.parse(b64DecodeUtf8(dataParam));
+          if (payload && typeof payload.script === 'string') {
+            incomingPayload = payload;
+            window.incomingPayload = incomingPayload;
+            bdReturnContext = {
+              node_url:    payload.node_url    ?? null,
+              source_text: payload.source_text ?? null,
+              title:       payload.title       ?? null
+            };
+            window.bdReturnContext = bdReturnContext;
+            console.log('preview: loaded from ?data payload', {
+              scriptLen: payload.script.length,
+              ...bdReturnContext
+            });
+            loadScript(payload.script, {
+              node_url:    payload.node_url    ?? null,
+              source_text: payload.source_text ?? null,
+              title:       payload.title       ?? null,
+              name:        payload.name        ?? null
+            });
+            return;
+          }
+          console.warn('preview: ?data payload missing string `script` field', payload);
+        } catch (err) {
+          console.warn('preview: failed to decode ?data param', err);
+        }
+      }
+
+      const scriptParam = params.get('script');
+      if (scriptParam) {
+        try {
+          loadScript(b64DecodeUtf8(scriptParam));
+          return;
+        } catch (err) {
+          console.warn('preview: failed to decode ?script param', err);
+        }
+      }
+
+      // No URL params — load the built-in default script.
+      loadScript(DEFAULT_SCRIPT);
+    })();
+
+    // ── Inline audio player (standalone music, 2026-08-05) ───────────────
+    // Empty at load; hidden via CSS. Populated dynamically when the music
+    // module posts BD_MEDIA_BLOB (bake-to-mp3). Each bake registers a
+    // session track (blob URL in-memory), oldest-first eviction at 5. On
+    // registration the media bar becomes visible and the new track is
+    // auto-selected. Track's <option value> is the blob URL; audio.src
+    // assigns it directly.
+    (function initSessionMediaBar() {
+      const bar    = document.getElementById('ev-media-bar');
+      const audio  = document.getElementById('ev-media-audio');
+      const btn    = document.getElementById('ev-media-btn');
+      const select = document.getElementById('ev-media-select');
+      if (!bar || !audio || !btn || !select) return;
+
+      const SESSION_TRACK_CAP = 5;
+      const sessionTracks = [];  // { name, url, sizeBytes }
+
+      function addTrack({ label, audioData, mime, sizeBytes }) {
+        if (!audioData) { console.warn('[session-track] no audioData — bail'); return; }
+        const blob = new Blob([audioData], { type: mime || 'audio/wav' });
+        const url  = URL.createObjectURL(blob);
+        sessionTracks.push({ name: label || 'session', url, sizeBytes: sizeBytes || audioData.byteLength });
+        while (sessionTracks.length > SESSION_TRACK_CAP) {
+          const oldest = sessionTracks.shift();
+          try { URL.revokeObjectURL(oldest.url); } catch (_) {}
+        }
+        renderOptions(url);
+        bar.classList.add('active');
+        // Auto-load the new track so a play click just starts it.
+        audio.pause();
+        audio.src = url;
+        btn.textContent = '▶';
+      }
+
+      function renderOptions(selectedUrl) {
+        select.innerHTML = sessionTracks.map(t => {
+          const sel = t.url === selectedUrl ? ' selected' : '';
+          const mb  = (t.sizeBytes / (1024 * 1024)).toFixed(1);
+          return `<option value="${t.url}"${sel}>${t.name}: ${mb} MB</option>`;
+        }).join('');
+      }
+
+      btn.addEventListener('click', () => {
+        if (!select.value) return;
+        if (audio.paused) {
+          if (audio.src !== select.value) audio.src = select.value;
+          audio.play().then(() => { btn.textContent = '⏸'; })
+                      .catch(err => console.warn('audio play failed', err));
+        } else {
+          audio.pause();
+          btn.textContent = '▶';
+        }
+      });
+      audio.addEventListener('ended', () => { btn.textContent = '▶'; });
+      select.addEventListener('change', () => {
+        const wasPlaying = !audio.paused;
+        audio.pause();
+        audio.src = select.value;
+        btn.textContent = '▶';
+        if (wasPlaying) audio.play().then(() => { btn.textContent = '⏸'; }).catch(() => {});
+      });
+
+      // Listen for the music module's bake output. The module is loaded in
+      // #module-frame, and postToParent posts here — no relay hop needed.
+      window.addEventListener('message', (event) => {
+        const d = event && event.data;
+        if (!d || d.type !== 'BD_MEDIA_BLOB') return;
+        addTrack(d.payload || {});
+      });
+    })();
+
+    // Defensive: keep the input → stepper sync wired up even though the
+    // textarea is readOnly (2026-07-15 Op 2). Programmatic .value = assigns
+    // (what sliders do) don't fire 'input', so this listener only fires if
+    // the readonly attribute is later removed for testing / dev override.
+    // Under normal user operation, sliders write to .value directly and
+    // update their own displays separately — this listener stays idle.
+    textarea.addEventListener('input', () => syncSteppersFromScript(textarea.value));
+
+    // ── #bd-bar (bottom): source context + Enter ButterflyDreaming ──────────
+    // Populates the source-context span from incomingPayload. Empty span when
+    // there is no ?data= payload (visitor arrived directly, or via legacy
+    // ?script=).
+    function renderSourceContext() {
+      const el = document.getElementById('bd-source-context');
+      if (!el) return;
+      const src = currentSourceText ? String(currentSourceText) : '';
+      const ttl = currentTitle      ? String(currentTitle)      : '';
+      const nm  = currentName       ? String(currentName)       : '';
+      // 2026-07-17 — display just `name` when present. Module node names
+      // (e.g. bd_V_Kolam_2) already contain the module/source prefix, so
+      // pairing them with source_text reads redundantly ("bd_V_Kolam —
+      // bd_V_Kolam_2"). For nodes without a name (e.g. section-title
+      // TextNodes), fall back to `source_text — title` (e.g.
+      // "Tao Te Ching — Chapter 42").
+      if (nm) {
+        el.textContent = nm;
+        return;
+      }
+      const parts = [src, ttl].filter(Boolean);
+      el.textContent = parts.join(' — ');
+    }
+
+    // Build the return-to-BD URL from the current textarea script + the
+    // preserved incomingPayload metadata (so BD can navigate back to the
+    // originating node). encodeURIComponent the base64 so `+` doesn't get
+    // decoded as space on arrival (URLSearchParams `+ → space` gotcha).
+    function buildBdReturnUrl() {
+      // MM2 — read current* state, which starts from ?data= arrival and
+      // updates on Prev/Next navigation. Textarea is authoritative for the
+      // script itself (user may have edited it).
+      const script = textarea.value;
+      const returnPayload = {
+        script,
+        node_url:    currentNodeUrl    ?? null,
+        source_text: currentSourceText ?? null,
+        title:       currentTitle      ?? null
+      };
+      const encoded = btoa(unescape(encodeURIComponent(JSON.stringify(returnPayload))));
+      const url = `https://graph.virtualfictions.uk?data=${encodeURIComponent(encoded)}`;
+      return { url, returnPayload, scriptLen: script.length };
+    }
+
+    // ── EV button strip — Edit only ────────────────────────────────────────
+    // Freeze button dropped for the music module — no drift/animation to
+    // freeze. ◀ Prev / Next ▶ retired earlier (needed BD's
+    // /api/module-sibling endpoint, not present on GitHub Pages).
+    const evEditBtn = document.getElementById('ev-edit-btn');
+
+    // Edit — toggle the side panel (script textarea) via a body class.
+    // Basic mode = ev-basic present = side panel hidden.
+    if (evEditBtn) {
+      evEditBtn.addEventListener('click', () => {
+        const nowEditing = document.body.classList.toggle('ev-basic') === false;
+        evEditBtn.classList.toggle('active', nowEditing);
+      });
+    }
+
+    // goToVirtual + navigateSibling retired 2026-07-17. See comment above
+    // the button-const block for context.
+
+    // Enter → navigate. 2026-07-15 (late) — wrapped in withUpdatePrompt so
+    // the update-script dialog fires here too. Earlier concern about "dialog
+    // on a tab that's about to navigate away" was wrong: the dialog PAUSES
+    // navigation until the user picks a button. Silent bug fixed.
+    const bdEnterBtn = document.getElementById('bd-enter-btn');
+    if (bdEnterBtn) {
+      bdEnterBtn.addEventListener('click', () => {
+        withUpdatePrompt(() => {
+          const { url, returnPayload, scriptLen } = buildBdReturnUrl();
+          console.log('Enter ButterflyDreaming URL:', url);
+          console.log('  return payload preview:', {
+            scriptLen,
+            node_url:    returnPayload.node_url,
+            source_text: returnPayload.source_text,
+            title:       returnPayload.title
+          });
+          window.location.href = url;
+        });
+      });
+    }
+
+    // Legacy execCommand('copy') fallback — does NOT require a secure
+    // context (only a user gesture, which every button click supplies), so
+    // works on plain HTTP LAN where navigator.clipboard.writeText is
+    // blocked. Deprecated but universally supported. Returns true on
+    // success, false otherwise.
+    function legacyCopyToClipboard(text) {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.setAttribute('readonly', '');
+      Object.assign(ta.style, {
+        position: 'fixed',
+        left:     '-9999px',
+        top:      '0',
+        opacity:  '0'
+      });
+      document.body.appendChild(ta);
+      // iOS Safari needs both focus() and setSelectionRange(); .select()
+      // alone is a no-op for readonly on some versions.
+      ta.focus();
+      ta.select();
+      try { ta.setSelectionRange(0, ta.value.length); } catch (_) {}
+      let ok = false;
+      try { ok = document.execCommand('copy'); } catch (_) {}
+      document.body.removeChild(ta);
+      return ok;
+    }
+
+    // Unified copy strategy: try async Clipboard API, fall back to legacy
+    // execCommand, and only surface the visible textarea if BOTH fail.
+    // Returns a Promise that resolves with the method name used, or rejects.
+    function copyTextSmart(text) {
+      return new Promise((resolve, reject) => {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(text).then(
+            () => resolve('async'),
+            () => {
+              if (legacyCopyToClipboard(text)) resolve('legacy');
+              else reject(new Error('async rejected, legacy failed'));
+            }
+          );
+        } else if (legacyCopyToClipboard(text)) {
+          resolve('legacy');
+        } else {
+          reject(new Error('no clipboard API and legacy failed'));
+        }
+      });
+    }
+
+    // Visible fallback when both async + legacy clipboard writes fail.
+    // Floats above #bd-bar with the URL preselected; user manually
+    // Cmd/Ctrl+C. Outside click dismisses.
+    function showBdLinkFallback(url) {
+      document.getElementById('bd-link-fallback')?.remove();
+      const box = document.createElement('div');
+      box.id = 'bd-link-fallback';
+      Object.assign(box.style, {
+        position: 'fixed',
+        bottom:   '44px',
+        right:    '8px',
+        zIndex:   '1001',
+        background: '#1a1200',
+        border:   '1px solid #FFD700',
+        borderRadius: '4px',
+        padding:  '8px',
+        display:  'flex',
+        flexDirection: 'column',
+        gap:      '6px',
+        maxWidth: '92vw',
+        boxShadow: '0 4px 12px rgba(0,0,0,0.7)',
+        fontSize: '12px',
+        color:    '#FFD700',
+        fontFamily: 'sans-serif'
+      });
+      const hint = document.createElement('div');
+      hint.textContent = 'Clipboard blocked (plain HTTP) — select-all + copy manually:';
+      const ta = document.createElement('textarea');
+      Object.assign(ta.style, {
+        width:  'min(70ch, 88vw)',
+        height: '4.5em',
+        background: '#0f0800',
+        color:  '#FFD700',
+        border: '1px solid #5a4400',
+        fontFamily: 'Courier New, monospace',
+        fontSize: '12px',
+        padding: '4px',
+        resize: 'none',
+        outline: 'none'
+      });
+      ta.readOnly = true;
+      ta.value = url;
+      box.appendChild(hint);
+      box.appendChild(ta);
+      document.body.appendChild(box);
+      ta.focus();
+      ta.select();
+      const dismiss = (ev) => {
+        if (box.contains(ev.target)) return;
+        box.remove();
+        document.removeEventListener('mousedown', dismiss, true);
+        document.removeEventListener('touchstart', dismiss, true);
+      };
+      setTimeout(() => {
+        document.addEventListener('mousedown', dismiss, true);
+        document.addEventListener('touchstart', dismiss, true);
+      }, 0);
+    }
+
+    // Copy BD Link → clipboard, same URL as Enter. Uses copyTextSmart:
+    // async Clipboard API → legacy execCommand → visible fallback.
+    const bdCopyLinkBtn = document.getElementById('bd-copy-link-btn');
+    if (bdCopyLinkBtn) {
+      bdCopyLinkBtn.addEventListener('click', () => {
+        withUpdatePrompt(() => {
+          const { url, returnPayload, scriptLen } = buildBdReturnUrl();
+          console.log('Copy BD Link URL:', url);
+          console.log('  return payload preview:', {
+            scriptLen,
+            node_url:    returnPayload.node_url,
+            source_text: returnPayload.source_text,
+            title:       returnPayload.title
+          });
+          copyTextSmart(url).then((method) => {
+            console.log(`Copy BD Link: copied via ${method}`);
+            const original = bdCopyLinkBtn.textContent;
+            bdCopyLinkBtn.textContent = 'Copied ✓';
+            setTimeout(() => { bdCopyLinkBtn.textContent = original; }, 1400);
+          }).catch((err) => {
+            console.warn('Copy BD Link: all copy strategies failed, showing fallback', err);
+            showBdLinkFallback(url);
+          });
+        });
+      });
+    }
+
+    // ── Buttons ──────────────────────────────────────────────────────────────
+    sendBtn.addEventListener('click', () => {
+      if (moduleReady) {
+        // ↓ Send = "restore module to committed script" — flushes any
+        // uncommitted slider changes on the module side (2026-07-15).
+        currentScript = textarea.value;
+        postToModule({ type: 'bd_script_update', script: textarea.value });
+        syncSteppersFromScript(textarea.value);
+        setStatus('Sent to module.');
+      } else {
+        pendingScript = textarea.value;
+        setStatus('Module not ready — will send once it loads.');
+      }
+    });
+
+    receiveBtn.addEventListener('click', () => {
+      if (!moduleReady) return setStatus('Module not ready yet.');
+      postToModule({ type: 'bd_script_request' });
+    });
+
+    // ── Copy-Link update-script gate (2026-07-15) ───────────────────────────
+    // Sliders write to the script textarea immediately, but the module's
+    // live drift ticks (angle / angle_minutes) do not — so a Copy-Link URL
+    // may miss recent drift unless the user has pressed ↑ to pull the
+    // module state back into the script. withUpdatePrompt() gates the two
+    // Copy-Link handlers on either:
+    //   'ask'    → show the dialog (first-time default)
+    //   'update' → sync automatically, then run the copy
+    //   'skip'   → run the copy immediately, trust the current textarea
+    // The user's choice can be persisted via the "Don't ask again" checkbox.
+    // 2026-07-15 (late) — session-scoped preference (in-memory). Was
+    // briefly localStorage-backed but that caused "dialog rarely
+    // appears" confusion when a stale preference from an earlier
+    // session was silently suppressing it. Per-page-load feels right:
+    // tick "Don't ask again this session", quiet for the rest of this
+    // load; a browser refresh asks again. No diagnostic mystery.
+    let updateModePref = 'ask';   // 'ask' | 'update' | 'skip'
+    // Best-effort cleanup of the retired localStorage key so users
+    // upgrading from the previous version don't carry an invisible
+    // preference forward. Silent, one-shot, harmless if absent.
+    try { localStorage.removeItem('bd_ev_copylink_updatemode'); } catch {}
+    // Send bd_script_request to the module, resolve when bd_script_response
+    // arrives (or after a short timeout so we never hang the copy path).
+    function requestModuleSync(timeoutMs = 500) {
+      return new Promise((resolve) => {
+        if (!moduleReady) { resolve(false); return; }
+        let done = false;
+        function handler(event) {
+          const data = event.data;
+          if (!data || data.type !== 'bd_script_response') return;
+          if (done) return;
+          done = true;
+          window.removeEventListener('message', handler);
+          resolve(true);
+        }
+        window.addEventListener('message', handler);
+        postToModule({ type: 'bd_script_request' });
+        setTimeout(() => {
+          if (done) return;
+          done = true;
+          window.removeEventListener('message', handler);
+          resolve(false);
+        }, timeoutMs);
+      });
+    }
+    function withUpdatePrompt(action) {
+      if (updateModePref === 'update') { requestModuleSync().then(() => action()); return; }
+      if (updateModePref === 'skip')   { action(); return; }
+      const dialog = document.getElementById('update-script-dialog');
+      const yesBtn = document.getElementById('update-script-yes');
+      const noBtn  = document.getElementById('update-script-no');
+      const cb     = document.getElementById('update-script-remember');
+      cb.checked = false;
+      dialog.hidden = false;
+      function cleanup() {
+        yesBtn.onclick = null;
+        noBtn.onclick = null;
+        dialog.hidden = true;
+      }
+      yesBtn.onclick = () => {
+        if (cb.checked) updateModePref = 'update';
+        cleanup();
+        requestModuleSync().then(() => action());
+      };
+      noBtn.onclick = () => {
+        if (cb.checked) updateModePref = 'skip';
+        cleanup();
+        action();
+      };
+    }
+
+    copyBtn.addEventListener('click', () => {
+      copyTextSmart(textarea.value).then((method) => {
+        console.log(`Copy: copied via ${method}`);
+        const original = copyBtn.textContent;
+        copyBtn.textContent = 'Copied ✓';
+        setTimeout(() => { copyBtn.textContent = original; }, 1400);
+      }).catch((err) => {
+        console.warn('Copy: all copy strategies failed', err);
+        setStatus('Copy failed — clipboard blocked (plain HTTP).');
+      });
+    });
+
+    copyLinkBtn.addEventListener('click', () => {
+      withUpdatePrompt(() => {
+        try {
+          // encodeURIComponent the base64 so `+` `/` `=` don't get chewed by
+          // URLSearchParams decoding on the receiving end (`+` → space breaks
+          // atob). Matches the fix in viewer.js Copy Link.
+          const encoded = b64EncodeUtf8(textarea.value);
+          const url = `${window.location.origin}${window.location.pathname}?script=${encodeURIComponent(encoded)}`;
+          copyTextSmart(url).then((method) => {
+            console.log(`Copy Link: copied via ${method}`);
+            const original = copyLinkBtn.textContent;
+            copyLinkBtn.textContent = 'Link Copied ✓';
+            setTimeout(() => { copyLinkBtn.textContent = original; }, 1400);
+          }).catch((err) => {
+            console.warn('Copy Link: all copy strategies failed, showing fallback', err);
+            showBdLinkFallback(url);
+          });
+        } catch (err) {
+          setStatus(`Encode error: ${err.message}`);
+        }
+      });
+    });
+
+    // ── Messages from the module ─────────────────────────────────────────────
+    window.addEventListener('message', (event) => {
+      const data = event.data;
+      if (!data || typeof data !== 'object') return;
+      switch (data.type) {
+        case 'BD_READY': {
+          moduleReady = true;
+          setStatus('Module ready.');
+          // NOTE (music): bd_ui_config { hideControls: true } NOT sent here.
+          // The music module owns its own controls (LH action buttons + right
+          // stepper column) and this harness has no replacement steppers.
+          const first = pendingScript !== null ? pendingScript : textarea.value;
+          pendingScript = null;
+          // MM2: don't push an empty script if the async default-fetch hasn't
+          // resolved yet. When it does, loadScript() will post the real thing.
+          if (first) {
+            postToModule({ type: 'bd_script_update', script: first });
+            syncSteppersFromScript(first);
+          }
+          break;
+        }
+        case 'bd_script_response': {
+          if (typeof data.script === 'string') {
+            const clean = stripAngleSeconds(data.script);
+            textarea.value = clean;
+            currentScript = clean;              // committed = live; slider-drift
+                                                // gap closed (2026-07-15).
+            syncSteppersFromScript(clean);
+            setStatus('Received from module.');
+          }
+          break;
+        }
+        // Live drift tick from the module — move the angle / angle_minutes
+        // steppers but leave the script textarea alone. Rule (user 2026-07-02):
+        // the script represents user intent; drift is runtime state. Mixing
+        // them is confusing. If the user wants to bake drift progress into the
+        // script they press ↑ (receive) explicitly.
+        case 'bd_state_update': {
+          const { angle, angle_minutes } = data;
+          const setSpan = (name, val) => {
+            const s = stepperCol.querySelector(`.stepper-value[data-name="${name}"]`);
+            if (s) s.textContent = String(val);
+          };
+          if (Number.isFinite(angle))         setSpan('angle',         angle);
+          if (Number.isFinite(angle_minutes)) setSpan('angle_minutes', angle_minutes);
+          break;
+        }
+        case 'BD_ERROR': {
+          const msg = data.payload && data.payload.message;
+          setStatus(`Module error: ${msg || '(no detail)'}`);
+          break;
+        }
+        default:
+          break;
+      }
+    });
+  </script>
+
+</body>
+</html>

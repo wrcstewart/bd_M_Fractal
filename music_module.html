@@ -1,0 +1,999 @@
+<!-- ButterflyDreaming Fractal Music Module — music_module.html — BD Protocol v0.1 -->
+<!-- STANDALONE (bd_M_Fractal repo). Derives an ABC score from an L-system
+     grammar (default: Hilbert curve) + turtle walk, filtering horizontal
+     segments to notes and vertical segments to rests. ABC is read-only in
+     this module — collaborative editing happens after handing off to
+     bd_M_ABC via the "Copy for ABC Player" button. Reuses bd_M_ABC's
+     Tone.js audio graph for preview playback. -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ButterflyDreaming — Fractal Music Module</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html, body { width: 100%; height: 100%; overflow: hidden; }
+
+    body {
+      background: #0a0a0f;
+      color: #e8e8e0;
+      font-family: Georgia, 'Times New Roman', serif;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .module-layout {
+      flex: 1;
+      display: flex;
+      flex-direction: row;
+      min-height: 0;
+      min-width: 0;
+    }
+
+    .lh-actions {
+      flex: 0 0 96px;
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+      padding: 6px 5px;
+      background: rgba(15, 15, 24, 0.75);
+      border: 1px solid rgba(74, 155, 142, 0.2);
+      border-radius: 0.4rem;
+      overflow-y: auto;
+      align-self: flex-start;
+      max-height: 100%;
+    }
+
+    .lh-actions button {
+      background: #0f0f18;
+      border: 1px solid #4a9b8e;
+      color: #4a9b8e;
+      cursor: pointer;
+      font-family: Georgia, 'Times New Roman', serif;
+      font-size: 0.68rem;
+      letter-spacing: 0.03em;
+      padding: 6px 3px;
+      border-radius: 3px;
+      line-height: 1.15;
+      text-align: center;
+      user-select: none;
+      -webkit-user-select: none;
+      -webkit-touch-callout: none;
+      -webkit-tap-highlight-color: transparent;
+      touch-action: manipulation;
+      flex: 0 0 auto;
+    }
+    .lh-actions button:hover:not(:disabled)  { background: #1a2a28; }
+    .lh-actions button:active:not(:disabled) { background: #243f3b; }
+    .lh-actions button:disabled              { opacity: 0.4; cursor: not-allowed; }
+    .lh-actions button.flash                 { background: #243f3b; color: #a0e0d0; }
+
+    .main-area {
+      flex: 1 1 auto;
+      min-height: 0;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      padding: 6px 8px;
+      gap: 6px;
+      align-items: center;
+    }
+
+    #status {
+      flex: 0 0 auto;
+      align-self: stretch;
+      font-size: 0.78rem;
+      font-style: italic;
+      color: #9e9e90;
+      letter-spacing: 0.03em;
+      text-align: center;
+      background: rgba(15, 15, 24, 0.55);
+      border: 1px solid rgba(74, 155, 142, 0.15);
+      border-radius: 3px;
+      padding: 4px 6px;
+      min-height: 22px;
+    }
+    #status.err {
+      color: #f2a0a0;
+      border-color: rgba(200, 100, 100, 0.4);
+      background: rgba(60, 15, 15, 0.55);
+    }
+
+    /* Read-only ABC pane — replaces the title-square from bd_M_ABC. Same
+       ~square footprint but scrollable text content. User selects + Cmd-C
+       to lift the ABC (or uses "Copy for ABC Player" for a fully-wrapped
+       bd_M_ABC-ready script). */
+    #abc-pane {
+      flex: 0 0 auto;
+      width: 220px;
+      height: auto;
+      aspect-ratio: 1 / 1;
+      max-width: 100%;
+      background: rgba(15, 15, 24, 0.55);
+      border: 1px solid rgba(74, 155, 142, 0.15);
+      border-radius: 6px;
+      padding: 8px 10px;
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 0.75rem;
+      color: #cfcfc4;
+      line-height: 1.4;
+      overflow: auto;
+      white-space: pre-wrap;
+      word-break: break-word;
+      user-select: text;
+      -webkit-user-select: text;
+    }
+    #abc-pane:empty::before {
+      content: '(no ABC yet)';
+      font-style: italic;
+      color: #6a6a60;
+    }
+
+    .playback-row {
+      flex: 0 0 auto;
+      display: flex;
+      gap: 8px;
+      justify-content: center;
+      align-items: center;
+    }
+    .playback-row button {
+      background: #0f0f18;
+      border: 1px solid #4a9b8e;
+      color: #4a9b8e;
+      cursor: pointer;
+      font-family: Georgia, 'Times New Roman', serif;
+      font-size: 0.85rem;
+      letter-spacing: 0.05em;
+      padding: 5px 13px;
+      border-radius: 3px;
+      text-transform: uppercase;
+      min-width: 59px;
+      touch-action: manipulation;
+    }
+    .playback-row button:hover:not(:disabled)  { background: #1a2a28; }
+    .playback-row button:active:not(:disabled) { background: #243f3b; }
+    .playback-row button:disabled              { opacity: 0.4; cursor: not-allowed; }
+
+    .control-panel {
+      flex: 0 0 200px;
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
+      gap: 3px;
+      background: rgba(15, 15, 24, 0.75);
+      border: 1px solid rgba(74, 155, 142, 0.2);
+      padding: 6px 8px;
+      border-radius: 0.4rem;
+      overflow-y: auto;
+      min-height: 0;
+      align-self: flex-start;
+      max-height: 100%;
+    }
+
+    @media (max-width: 500px) {
+      .module-layout { flex-direction: column; }
+      .lh-actions {
+        flex: 0 0 auto;
+        flex-direction: row;
+        flex-wrap: wrap;
+        padding: 5px 6px;
+        align-self: stretch;
+      }
+      .lh-actions button { flex: 1 1 auto; min-width: 70px; }
+      .control-panel {
+        flex: 0 0 auto;
+        max-height: 40vh;
+        flex-direction: row;
+        flex-wrap: wrap;
+        align-self: stretch;
+      }
+      .control-row { flex: 1 1 30%; min-width: 90px; max-width: 200px; }
+      #abc-pane { width: 140px; font-size: 0.7rem; padding: 6px 8px; }
+    }
+
+    .control-row {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      width: 100%;
+    }
+    .control-row label {
+      font-size: 0.64rem;
+      letter-spacing: 0.02em;
+      color: #4a9b8e;
+      text-align: center;
+      font-family: 'Courier New', Courier, monospace;
+      user-select: none;
+      -webkit-user-select: none;
+      -webkit-touch-callout: none;
+    }
+    .stepper {
+      display: flex;
+      align-items: stretch;
+      justify-content: space-between;
+      gap: 3px;
+    }
+    .step-btn {
+      background: #0f0f18;
+      border: 1px solid #4a9b8e;
+      color: #4a9b8e;
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 0.9rem;
+      padding: 0;
+      width: 26px;
+      height: 22px;
+      line-height: 1;
+      cursor: pointer;
+      border-radius: 3px;
+      flex: 0 0 auto;
+      touch-action: manipulation;
+      user-select: none;
+      -webkit-user-select: none;
+      -webkit-touch-callout: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .step-btn:hover:not(:disabled)  { background: #1a2a28; }
+    .step-btn:active:not(:disabled) { background: #243f3b; }
+    .step-btn:disabled              { opacity: 0.4; cursor: not-allowed; }
+    .stepper-value {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 0.76rem;
+      color: #e8e8e0;
+      background: #0f0f18;
+      border: 1px solid #2a2a3a;
+      padding: 2px;
+      border-radius: 3px;
+      min-width: 0;
+      user-select: none;
+      -webkit-user-select: none;
+      -webkit-touch-callout: none;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="module-layout">
+
+    <aside class="lh-actions">
+      <button id="copy-grammar-btn" type="button" title="Copy the current L-system script (grammar + params) to the clipboard">Copy<br>Grammar</button>
+      <button id="copy-abc-btn"     type="button" title="Copy a fully-formed bd_M_ABC script (with the derived ABC score wrapped in %%bd_score) — paste into any bd_M_ABC node to play collaboratively">Copy for<br>ABC Player</button>
+      <button id="bake-mp3-btn"     type="button" title="Render offline to WAV and add to the bottom-bar media player" disabled>Bake</button>
+      <button id="download-mp3-btn" type="button" title="Save the most recent bake as a .wav file" disabled>Save<br>wav</button>
+      <button id="save-midi-btn"    type="button" title="Save the derived ABC score as a .mid file (MIDI, editable in any DAW)" disabled>Save<br>midi</button>
+    </aside>
+
+    <section class="main-area">
+      <div id="status">Loading samples…</div>
+      <div id="abc-pane" title="Derived ABC (read-only; select + Cmd-C to copy, or use 'Copy for ABC Player')"></div>
+      <div class="playback-row">
+        <button id="play-pause-btn" type="button" disabled>Play</button>
+        <button id="stop-btn"       type="button" disabled>Stop</button>
+      </div>
+    </section>
+
+    <aside id="control-panel" class="control-panel"><!-- injected --></aside>
+
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.7.77/Tone.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/abcjs/6.2.2/abcjs-basic-min.js"></script>
+
+  <script>
+    'use strict';
+
+    window.addEventListener('error', (ev) => {
+      const msg = (ev.error && ev.error.message) || ev.message || 'unknown error';
+      const el = document.getElementById('status');
+      if (el) { el.textContent = 'JS error: ' + msg; el.classList.add('err'); }
+      console.error('[bd_M_Fractal] window.onerror', ev.error || ev);
+    });
+
+    // ── Refs ─────────────────────────────────────────────────────────────────
+    const statusEl        = document.getElementById('status');
+    const abcPaneEl       = document.getElementById('abc-pane');
+    const playPauseBtn    = document.getElementById('play-pause-btn');
+    const stopBtn         = document.getElementById('stop-btn');
+    const copyGrammarBtn  = document.getElementById('copy-grammar-btn');
+    const copyAbcBtn      = document.getElementById('copy-abc-btn');
+    const bakeMp3Btn      = document.getElementById('bake-mp3-btn');
+    const downloadBtn     = document.getElementById('download-mp3-btn');
+    const saveMidiBtn     = document.getElementById('save-midi-btn');
+    const controlPanel    = document.getElementById('control-panel');
+
+    // ── State ───────────────────────────────────────────────────────────────
+    let samplerReady    = false;
+    let abcReady        = false;
+    let playerState     = 'stopped';
+    let notePart        = null;
+    let noteEvents      = [];
+    let endTimeSecs     = 0;
+    let storedText      = '';        // the incoming L-system script
+    let derivedAbc      = '';        // the currently-derived ABC string
+    let baking          = false;
+    let lastBakedBlob   = null;
+    let lastBakedLabel  = '';
+
+    // ── Scale tables (semitone offsets from root) ───────────────────────────
+    const SCALES = {
+      minor:      [0, 2, 3, 5, 7, 8, 10],   // natural minor / Aeolian
+      major:      [0, 2, 4, 5, 7, 9, 11],
+      pentatonic: [0, 2, 4, 7, 9],
+      blues:      [0, 3, 5, 6, 7, 10]
+    };
+    const SCALE_NAMES = Object.keys(SCALES);
+    const NOTE_NAMES  = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+    // ABC key-signature strings for each scale (used in the K: header)
+    const SCALE_TO_ABC_KEY_SUFFIX = {
+      minor:      'min',
+      major:      'maj',
+      pentatonic: 'min',   // no distinct pentatonic key; treat as minor for accidentals
+      blues:      'min'
+    };
+
+    // ── Steppers ────────────────────────────────────────────────────────────
+    const STEPPERS = [
+      { name: 'iterations',    min: 1,   max: 6,   step: 1,    fallback: 3 },
+      { name: 'step_seconds',  min: 0.1, max: 2.0, step: 0.1,  fallback: 0.5 },
+      { name: 'vertical_time', min: 0.0, max: 2.0, step: 0.1,  fallback: 0.5 },
+      { name: 'scale',         min: 0,   max: SCALE_NAMES.length - 1, step: 1, fallback: 0,
+        isEnum: true, values: SCALE_NAMES },
+      { name: 'root',          min: 0,   max: 11,  step: 1,    fallback: 0,
+        isEnum: true, values: NOTE_NAMES }
+    ];
+
+    STEPPERS.forEach((s) => {
+      const row = document.createElement('div');
+      row.className = 'control-row';
+      row.innerHTML = `
+        <div class="stepper">
+          <button class="step-btn" type="button" data-name="${s.name}" data-delta="-1">−</button>
+          <span class="stepper-value" data-name="${s.name}">${formatDisplay(s, s.fallback)}</span>
+          <button class="step-btn" type="button" data-name="${s.name}" data-delta="1">+</button>
+        </div>
+        <label>${s.name}</label>
+      `;
+      controlPanel.appendChild(row);
+    });
+
+    // ── Helpers ─────────────────────────────────────────────────────────────
+    const setStatus = (msg, isErr = false) => {
+      statusEl.textContent = msg;
+      statusEl.classList.toggle('err', !!isErr);
+    };
+    const postToParent = (msg) => window.parent.postMessage(msg, '*');
+
+    function formatDisplay(spec, val) {
+      if (spec.isEnum) return spec.values[Math.round(val)] || spec.values[0];
+      if (spec.step >= 1) return String(Math.round(val));
+      if (val < 10) return val.toFixed(1);
+      return String(Math.round(val));
+    }
+    function getStepperValue(name) {
+      const s = STEPPERS.find(x => x.name === name);
+      if (!s) return null;
+      const span = controlPanel.querySelector(`.stepper-value[data-name="${name}"]`);
+      if (!span) return s.fallback;
+      const txt = span.textContent.trim();
+      if (s.isEnum) return s.values.indexOf(txt);
+      const v = parseFloat(txt);
+      return Number.isFinite(v) ? v : s.fallback;
+    }
+    function setStepperValue(name, val) {
+      const s = STEPPERS.find(x => x.name === name);
+      if (!s) return;
+      let clamped = Math.max(s.min, Math.min(s.max, val));
+      const span = controlPanel.querySelector(`.stepper-value[data-name="${name}"]`);
+      if (span) span.textContent = formatDisplay(s, clamped);
+    }
+
+    // ── L-system + turtle + ABC generation ──────────────────────────────────
+
+    function parseGrammarFromScript(text) {
+      const g = {
+        axiom:      'A',
+        rules:      { A: '-BF+AFA+FB-', B: '+AF-BFB-FA+' },
+        iterations: 3,
+        angle:      90,
+        scale:      'minor',
+        root:       0,
+        stepSeconds:  0.5,
+        verticalTime: 0.5
+      };
+      const axiomM = text.match(/^%%bd_axiom\s+(\S+)/m);
+      if (axiomM) g.axiom = axiomM[1];
+      // rules: multiple '%%bd_rule <sym>: <expansion>' lines
+      const ruleRe = /^%%bd_rule\s+(\S)\s*:\s*(.+?)\s*$/gm;
+      const foundRules = {};
+      let m;
+      while ((m = ruleRe.exec(text)) !== null) {
+        foundRules[m[1]] = m[2];
+      }
+      if (Object.keys(foundRules).length) g.rules = foundRules;
+      const iterM = text.match(/^%%bd_iterations\s+(\d+)/m);
+      if (iterM) g.iterations = Math.max(1, Math.min(6, parseInt(iterM[1], 10)));
+      const angleM = text.match(/^%%bd_angle\s+([\d.]+)/m);
+      if (angleM) g.angle = parseFloat(angleM[1]);
+      const scaleM = text.match(/^%%bd_scale\s+(\w+)/m);
+      if (scaleM && SCALES[scaleM[1]]) g.scale = scaleM[1];
+      const rootM = text.match(/^%%bd_root\s+([A-G][#b]?|\d+)/m);
+      if (rootM) {
+        const r = rootM[1];
+        if (/^\d+$/.test(r)) g.root = Math.max(0, Math.min(11, parseInt(r, 10)));
+        else {
+          const idx = NOTE_NAMES.indexOf(r.replace('b', '').replace('B', 'b'));
+          if (idx >= 0) g.root = idx;
+        }
+      }
+      const ssM = text.match(/^%%bd_step_seconds\s+([\d.]+)/m);
+      if (ssM) g.stepSeconds = Math.max(0.05, parseFloat(ssM[1]));
+      const vtM = text.match(/^%%bd_vertical_time\s+([\d.]+)/m);
+      if (vtM) g.verticalTime = Math.max(0, parseFloat(vtM[1]));
+      return g;
+    }
+
+    function expandLSystem(axiom, rules, iterations) {
+      let current = axiom;
+      for (let i = 0; i < iterations; i++) {
+        let next = '';
+        for (const ch of current) next += (rules[ch] !== undefined ? rules[ch] : ch);
+        current = next;
+      }
+      return current;
+    }
+
+    // Turtle: walk the symbol string with F=forward, +=turn CCW, -=turn CW.
+    // Heading in degrees, 0 = east. Returns [{x1,y1,x2,y2,isHorizontal,length}, …].
+    function turtleWalk(symbols, angleDeg) {
+      const segments = [];
+      let x = 0, y = 0, heading = 0;
+      for (const ch of symbols) {
+        if (ch === 'F') {
+          const rad = heading * Math.PI / 180;
+          const dx = Math.cos(rad), dy = Math.sin(rad);
+          const nx = x + dx, ny = y + dy;
+          // At 90° angles cos/sin are ±1 or 0 exactly (up to fp noise). Use a
+          // tolerance to classify as horizontal or vertical.
+          const isHorizontal = Math.abs(dx) > 0.5;
+          segments.push({ x1: x, y1: y, x2: nx, y2: ny, isHorizontal, length: 1 });
+          x = nx; y = ny;
+        } else if (ch === '+') {
+          heading = (heading + angleDeg) % 360;
+        } else if (ch === '-') {
+          heading = (heading - angleDeg + 360) % 360;
+        }
+        // any other letter (A, B, …) is a non-drawing placeholder — skip.
+      }
+      return segments;
+    }
+
+    // Map an integer y-coordinate to a MIDI note number given a scale + root.
+    // y=0 → root note in a low octave; each increment steps one degree up the
+    // scale, wrapping to the next octave when past the end.
+    function pitchForY(y, scaleName, rootIdx, baseOctave) {
+      const degrees = SCALES[scaleName] || SCALES.minor;
+      const yInt    = Math.round(y);
+      // Handle negative y with a floor'd modulo.
+      const octaveOff = Math.floor(yInt / degrees.length);
+      const degree    = ((yInt % degrees.length) + degrees.length) % degrees.length;
+      const rootMidi  = 60 + rootIdx + (baseOctave - 4) * 12;  // C4 = 60
+      return rootMidi + octaveOff * 12 + degrees[degree];
+    }
+
+    // MIDI note number → ABC token. Base octave 4 in ABC uses lowercase
+    // (c, d, e, …); octave 3 uses uppercase (C, D, E, …); octave 5 adds ',
+    // octave 2 adds ',' (comma).
+    // Accidentals: ^ for sharp, _ for flat.
+    const ABC_NAT   = ['C','C','D','D','E','F','F','G','G','A','A','B'];
+    const ABC_ACCID = ['', '^','', '^','', '','^','', '^','', '^',''];
+    function midiToAbc(midi) {
+      const noteIdx = ((midi % 12) + 12) % 12;
+      const oct     = Math.floor(midi / 12) - 1;   // MIDI 60 = C4, so oct 4 for note 60
+      let name      = ABC_NAT[noteIdx];
+      const accid   = ABC_ACCID[noteIdx];
+      if (oct >= 5) {
+        name = name.toLowerCase();
+        for (let i = 5; i < oct; i++) name += "'";
+      } else if (oct === 4) {
+        name = name.toLowerCase();
+      } else {
+        // oct <= 3
+        for (let i = 3; i > oct; i--) name += ",";
+      }
+      return accid + name;
+    }
+
+    // Generate ABC string from a params object + segments.
+    // Uses L:1/4 and each horizontal segment = one quarter note. Rests span
+    // verticalTime × 1 quarter beat.
+    function generateAbc(segments, g) {
+      const bpm = Math.max(20, Math.round(60 / g.stepSeconds));
+      const rootName = NOTE_NAMES[g.root];
+      const keySig = rootName + (SCALE_TO_ABC_KEY_SUFFIX[g.scale] || 'min');
+      const lines = [
+        'X:1',
+        `T:Fractal (${g.scale} on ${rootName}, iter ${g.iterations})`,
+        'M:4/4',
+        'L:1/4',
+        `Q:1/4=${bpm}`,
+        `K:${keySig}`,
+      ];
+      let body = '';
+      let barCount = 0;
+      const barLength = 4;      // quarter notes per bar (M:4/4, L:1/4)
+      let barAccum = 0;
+      for (const seg of segments) {
+        if (seg.isHorizontal) {
+          const midi = pitchForY(seg.y1, g.scale, g.root, 4);
+          body += midiToAbc(midi);
+          barAccum += 1;
+        } else {
+          if (g.verticalTime > 0) {
+            // Rests: 'z' = quarter rest; z2 = half; z/2 = eighth
+            const restLen = g.verticalTime;
+            if (Math.abs(restLen - 1) < 0.01)      body += 'z';
+            else if (Math.abs(restLen - 2) < 0.01) body += 'z2';
+            else if (Math.abs(restLen - 0.5) < 0.01) body += 'z/2';
+            else body += `z${restLen}`;    // fractional lengths accepted by abcjs
+            barAccum += restLen;
+          }
+          // else: silent transition — nothing emitted
+        }
+        // Every ~barLength quarter beats insert a bar line for readability.
+        if (barAccum >= barLength) {
+          body += '|';
+          barCount++;
+          barAccum = 0;
+          if (barCount % 4 === 0) body += '\n';
+        } else {
+          body += ' ';
+        }
+      }
+      return lines.join('\n') + '\n' + body.trim() + '\n';
+    }
+
+    function regenerateAbc() {
+      const g = parseGrammarFromScript(storedText || '');
+      // Sync steppers from parsed script so the panel reflects the current
+      // params (also on first arrival).
+      setStepperValue('iterations',    g.iterations);
+      setStepperValue('step_seconds',  g.stepSeconds);
+      setStepperValue('vertical_time', g.verticalTime);
+      setStepperValue('scale',         SCALE_NAMES.indexOf(g.scale));
+      setStepperValue('root',          g.root);
+
+      // But also allow stepper edits to override script values (live tweak).
+      // If any stepper differs from parsed value, use the stepper's value.
+      g.iterations   = getStepperValue('iterations');
+      g.stepSeconds  = getStepperValue('step_seconds');
+      g.verticalTime = getStepperValue('vertical_time');
+      g.scale        = SCALE_NAMES[getStepperValue('scale')] || 'minor';
+      g.root         = getStepperValue('root');
+
+      const symbols = expandLSystem(g.axiom, g.rules, g.iterations);
+      const segments = turtleWalk(symbols, g.angle);
+      derivedAbc = generateAbc(segments, g);
+      abcPaneEl.textContent = derivedAbc;
+      loadDerivedAbcIntoPlayer();
+    }
+
+    // ── Audio: reused from bd_M_ABC ─────────────────────────────────────────
+    let reverb, vibrato, chorus, sampler;
+    try {
+      reverb  = new Tone.Reverb({ decay: 2.5 });
+      reverb.wet.value = 0.35;
+      vibrato = new Tone.Vibrato({ frequency: 5, depth: 0.15, type: 'sine' });
+      chorus  = new Tone.Chorus({ frequency: 1.5, delayTime: 3.5, depth: 0.3, wet: 0.2 });
+      chorus.start();
+      sampler = new Tone.Sampler({
+        urls: {
+          'F#2': 'bass_recorder_Fs2.mp3',
+          'C3':  'bass_recorder_C3.mp3',
+          'G#3': 'bass_recorder_Gs3.mp3',
+          'E4':  'bass_recorder_E4.mp3'
+        },
+        baseUrl: './bass-recorder/',
+        onerror: (err) => {
+          const msg = `Failed to load samples: ${err}`;
+          console.error(msg); setStatus(msg, true);
+        }
+      });
+      sampler.connect(chorus);
+      chorus.connect(vibrato);
+      vibrato.connect(reverb);
+      reverb.toDestination();
+    } catch (err) {
+      setStatus('Audio init failed: ' + err.message, true);
+      throw err;
+    }
+
+    Promise.all([Tone.loaded(), reverb.ready]).then(() => {
+      samplerReady = true;
+      setStatus(abcReady ? 'Ready — press Play' : 'Ready — press +/− then Play');
+      updateControls();
+    });
+
+    postToParent({ type: 'BD_READY' });
+
+    // ── ABC → notes (reused from bd_M_ABC) ──────────────────────────────────
+    const DIATONIC = ['C','D','E','F','G','A','B'];
+    const ACC_MAP  = { sharp: '#', flat: 'b', dblsharp: '##', dblflat: 'bb' };
+    function abcPitchToTone(abcPitch, accidental) {
+      const octave  = 4 + Math.floor(abcPitch / 7);
+      const noteIdx = ((abcPitch % 7) + 7) % 7;
+      const acc     = ACC_MAP[accidental] || '';
+      return `${DIATONIC[noteIdx]}${acc}${octave}`;
+    }
+    function parseBPM(abcText) {
+      const frac = abcText.match(/Q:\s*(\d+)\/(\d+)\s*=\s*(\d+)/);
+      if (frac) { const [, a, b, n] = frac.map(Number); return 4 * n * a / b; }
+      const simple = abcText.match(/Q:\s*(\d+)/);
+      if (simple) return parseInt(simple[1], 10);
+      return 120;
+    }
+    function extractNotes(parsed) {
+      const notes = [];
+      const tune = parsed && parsed[0];
+      if (!tune || !tune.lines) return notes;
+      let t = 0;
+      for (const line of tune.lines) {
+        if (!line.staff) continue;
+        for (const staff of line.staff) {
+          if (!staff.voices) continue;
+          for (const voice of staff.voices) {
+            for (const elem of voice) {
+              if (elem.el_type !== 'note') continue;
+              if (elem.rest) { t += elem.duration; continue; }
+              if (!elem.pitches || elem.pitches.length === 0) continue;
+              const elemTime = t;
+              elem.pitches.forEach(p => {
+                notes.push({
+                  time: elemTime,
+                  tonePitch: abcPitchToTone(p.pitch, p.accidental),
+                  durationWhole: elem.duration
+                });
+              });
+              t += elem.duration;
+            }
+          }
+        }
+      }
+      return notes;
+    }
+    function buildEvents(notes, bpm) {
+      const secondsPerWhole = 240 / bpm;
+      const events = [];
+      let endTime = 0;
+      for (const n of notes) {
+        const timeSecs = n.time * secondsPerWhole;
+        const durSecs  = n.durationWhole * secondsPerWhole;
+        events.push({ time: timeSecs, note: n.tonePitch, duration: durSecs });
+        if (timeSecs + durSecs > endTime) endTime = timeSecs + durSecs;
+      }
+      return { events, endTime };
+    }
+
+    function loadDerivedAbcIntoPlayer() {
+      if (typeof ABCJS === 'undefined') return;
+      let parsed;
+      try { parsed = ABCJS.parseOnly(derivedAbc); }
+      catch (err) {
+        setStatus('ABC parse failed', true);
+        return;
+      }
+      const notes = extractNotes(parsed);
+      if (notes.length === 0) {
+        setStatus('No playable notes in derived ABC', true);
+        abcReady = false; updateControls();
+        return;
+      }
+      const bpm = parseBPM(derivedAbc);
+      Tone.Transport.bpm.value = bpm;
+      const built = buildEvents(notes, bpm);
+      noteEvents = built.events;
+      endTimeSecs = built.endTime;
+      teardownPlayback();
+      playerState = 'stopped';
+      abcReady = true;
+      setStatus(samplerReady ? `Ready — ${notes.length} notes, ${endTimeSecs.toFixed(1)}s` : 'Loading samples…');
+      updateControls();
+    }
+
+    // ── Playback ────────────────────────────────────────────────────────────
+    let loopTimer = null;
+    function teardownPlayback() {
+      clearTimeout(loopTimer);
+      loopTimer = null;
+      if (notePart) { notePart.stop(0); notePart.dispose(); notePart = null; }
+      Tone.Transport.stop();
+      Tone.Transport.cancel(0);
+    }
+    function startPlayback() {
+      teardownPlayback();
+      notePart = new Tone.Part((time, ev) => {
+        sampler.triggerAttackRelease(ev.note, ev.duration, time);
+      }, noteEvents);
+      notePart.start(0);
+      Tone.Transport.scheduleOnce(() => {
+        playerState = 'finished';
+        setStatus('Finished');
+        updateControls();
+      }, endTimeSecs + 0.05);
+      Tone.Transport.start();
+      playerState = 'playing';
+      setStatus('Playing');
+      updateControls();
+    }
+    function updateControls() {
+      const ready = samplerReady && abcReady;
+      playPauseBtn.disabled = !ready;
+      stopBtn.disabled      = !ready;
+      playPauseBtn.textContent = (playerState === 'playing') ? 'Pause' : 'Play';
+      copyGrammarBtn.disabled = !storedText;
+      copyAbcBtn.disabled     = !derivedAbc;
+      bakeMp3Btn.disabled     = !ready || baking;
+      downloadBtn.disabled    = !lastBakedBlob;
+      saveMidiBtn.disabled    = !derivedAbc;
+    }
+    playPauseBtn.addEventListener('click', async () => {
+      await Tone.start();
+      if (playerState === 'playing') {
+        Tone.Transport.pause(); playerState = 'paused'; setStatus('Paused');
+      } else if (playerState === 'paused') {
+        Tone.Transport.start(); playerState = 'playing'; setStatus('Playing');
+      } else {
+        startPlayback();
+      }
+      updateControls();
+    });
+    stopBtn.addEventListener('click', () => {
+      teardownPlayback();
+      playerState = 'stopped'; setStatus('Stopped'); updateControls();
+    });
+
+    // ── Stepper interaction — re-derive ABC when any stepper changes ────────
+    function stepControl(name, dir) {
+      const s = STEPPERS.find(x => x.name === name);
+      if (!s) return;
+      const cur = getStepperValue(name);
+      let next = cur + dir * s.step;
+      next = Math.max(s.min, Math.min(s.max, next));
+      next = parseFloat(next.toFixed(4));
+      if (formatDisplay(s, next) === formatDisplay(s, cur)) return;
+      setStepperValue(name, next);
+      regenerateAbc();
+    }
+    controlPanel.addEventListener('pointerdown', (event) => {
+      const btn = event.target.closest('.step-btn');
+      if (!btn || btn.disabled) return;
+      event.preventDefault();
+      try { btn.setPointerCapture(event.pointerId); } catch (_) {}
+      const name  = btn.dataset.name;
+      const delta = parseFloat(btn.dataset.delta);
+      stepControl(name, delta);
+      let repeatTimer = null;
+      const holdTimer = setTimeout(() => {
+        repeatTimer = setInterval(() => stepControl(name, delta), 120);
+      }, 500);
+      const stop = () => {
+        clearTimeout(holdTimer);
+        if (repeatTimer) clearInterval(repeatTimer);
+        btn.removeEventListener('pointerup',     stop);
+        btn.removeEventListener('pointercancel', stop);
+        btn.removeEventListener('pointerleave',  stop);
+      };
+      btn.addEventListener('pointerup',     stop);
+      btn.addEventListener('pointercancel', stop);
+      btn.addEventListener('pointerleave',  stop);
+    });
+
+    // ── LH buttons ──────────────────────────────────────────────────────────
+    function flashBtn(btn, label) {
+      const orig = btn.innerHTML;
+      btn.classList.add('flash');
+      btn.innerHTML = label;
+      setTimeout(() => { btn.classList.remove('flash'); btn.innerHTML = orig; }, 1200);
+    }
+    async function copyText(text) {
+      try { await navigator.clipboard.writeText(text); return true; }
+      catch (_) {
+        const ta = document.createElement('textarea');
+        ta.value = text; ta.setAttribute('readonly', '');
+        Object.assign(ta.style, { position:'fixed', left:'-9999px', opacity:'0' });
+        document.body.appendChild(ta);
+        ta.focus(); ta.select();
+        let ok = false;
+        try { ok = document.execCommand('copy'); } catch (_) {}
+        document.body.removeChild(ta);
+        return ok;
+      }
+    }
+
+    // Copy Grammar — the full grammar script (with current stepper values
+    // baked in so downstream regenerates the same ABC).
+    copyGrammarBtn.addEventListener('click', async () => {
+      const grammarText = currentGrammarScript();
+      if (await copyText(grammarText)) flashBtn(copyGrammarBtn, 'Copied<br>✓');
+      else setStatus('Copy failed', true);
+    });
+
+    // Copy for ABC Player — wrap the derived ABC in a bd_M_ABC script shell
+    // with reasonable defaults for effects. Recipient pastes this into any
+    // bd_M_ABC node and it plays immediately (%%bd_module identifies the
+    // player; the rest are directives that player understands).
+    copyAbcBtn.addEventListener('click', async () => {
+      const abcOnly = extractAbcBody(derivedAbc);   // strip our comments
+      const wrapped =
+        '%%bd_module bd_M_ABC\n' +
+        '%%bd_reverb_wet 0.35\n' +
+        '%%bd_reverb_decay 2.5\n' +
+        '%%bd_vibrato_frequency 5.0\n' +
+        '%%bd_vibrato_depth 0.2\n' +
+        '%%bd_chorus_wet 0.3\n' +
+        '%%bd_chorus_depth 0.4\n' +
+        '%%bd_loop true\n' +
+        '%%bd_loop_gap 6\n' +
+        '%%bd_score [\n' + abcOnly + '\n%%bd_]\n';
+      if (await copyText(wrapped)) flashBtn(copyAbcBtn, 'Copied<br>✓');
+      else setStatus('Copy failed', true);
+    });
+    function extractAbcBody(text) {
+      // derivedAbc already IS just ABC (no %%bd_ directives), return as-is.
+      return text.trim();
+    }
+
+    // Rebuild the grammar script from current storedText + stepper values.
+    // Preserves the user's rules but writes updated iterations/step/vertical/
+    // scale/root lines (or inserts them if absent).
+    function currentGrammarScript() {
+      let text = storedText || '';
+      const setters = {
+        iterations:    String(Math.round(getStepperValue('iterations'))),
+        step_seconds:  getStepperValue('step_seconds').toFixed(2),
+        vertical_time: getStepperValue('vertical_time').toFixed(2),
+        scale:         SCALE_NAMES[getStepperValue('scale')] || 'minor',
+        root:          NOTE_NAMES[getStepperValue('root')] || 'C'
+      };
+      for (const [key, val] of Object.entries(setters)) {
+        const re = new RegExp(`^%%bd_${key}\\s+.*$`, 'm');
+        const line = `%%bd_${key} ${val}`;
+        if (re.test(text)) text = text.replace(re, line);
+        else {
+          // Insert after the last %%bd_ line
+          const lines = text.split('\n');
+          let lastBd = -1;
+          for (let i = 0; i < lines.length; i++) if (/^%%bd_/.test(lines[i])) lastBd = i;
+          lines.splice(lastBd + 1, 0, line);
+          text = lines.join('\n');
+        }
+      }
+      return text;
+    }
+
+    // ── Bake / Save wav / Save midi — reused pattern from bd_M_ABC ──────────
+    const BAKE_BTN_INITIAL = bakeMp3Btn.innerHTML;
+    bakeMp3Btn.addEventListener('click', async () => {
+      if (baking || !abcReady) return;
+      baking = true; updateControls();
+      bakeMp3Btn.innerHTML = 'Baking…';
+      setStatus('Rendering to WAV…');
+      try {
+        const buffer = await renderOfflineToBuffer();
+        const wavBytes = audioBufferToWav(buffer);
+        const now = new Date();
+        const stamp = [now.getHours(), now.getMinutes(), now.getSeconds()]
+          .map(v => String(v).padStart(2, '0')).join(':');
+        const label = `fractal @ ${stamp}`;
+        lastBakedBlob  = new Blob([wavBytes], { type: 'audio/wav' });
+        lastBakedLabel = label;
+        postToParent({
+          type: 'BD_MEDIA_BLOB',
+          payload: { label, audioData: wavBytes.buffer, mime: 'audio/wav', sizeBytes: wavBytes.byteLength }
+        });
+        setStatus(`Baked ${label} (${(wavBytes.byteLength / (1024*1024)).toFixed(1)} MB) — see bottom bar`);
+      } catch (err) {
+        setStatus('Bake failed: ' + err.message, true);
+      } finally {
+        baking = false;
+        bakeMp3Btn.innerHTML = BAKE_BTN_INITIAL;
+        updateControls();
+      }
+    });
+    function downloadBlob(blob, filename) {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = filename;
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }
+    downloadBtn.addEventListener('click', () => {
+      if (!lastBakedBlob) return;
+      const safe = lastBakedLabel.replace(/[^A-Za-z0-9._-]+/g, '_') || 'bake';
+      downloadBlob(lastBakedBlob, `${safe}.wav`);
+    });
+    saveMidiBtn.addEventListener('click', () => {
+      if (!derivedAbc || typeof ABCJS === 'undefined' || !ABCJS.synth) return;
+      try {
+        const result = ABCJS.synth.getMidiFile(derivedAbc, { midiOutputType: 'binary' });
+        const bytes  = Array.isArray(result) ? result[0] : result;
+        if (!bytes || !bytes.byteLength) throw new Error('empty MIDI output');
+        const blob = new Blob([bytes], { type: 'audio/midi' });
+        downloadBlob(blob, 'fractal.mid');
+        setStatus(`Saved fractal.mid (${bytes.byteLength} bytes)`);
+      } catch (err) {
+        setStatus('Save midi failed: ' + err.message, true);
+      }
+    });
+
+    async function renderOfflineToBuffer() {
+      const durationSec = endTimeSecs + 3.0;
+      const toneBuf = await Tone.Offline(async () => {
+        const rev = new Tone.Reverb({ decay: 2.5, wet: 0.35 }).toDestination();
+        await rev.ready;
+        const vib = new Tone.Vibrato({ frequency: 5, depth: 0.15, type: 'sine' }).connect(rev);
+        const cho = new Tone.Chorus({ frequency: 1.5, delayTime: 3.5, depth: 0.3, wet: 0.2 }).connect(vib);
+        cho.start();
+        const smp = new Tone.Sampler({
+          urls: {
+            'F#2': 'bass_recorder_Fs2.mp3',
+            'C3':  'bass_recorder_C3.mp3',
+            'G#3': 'bass_recorder_Gs3.mp3',
+            'E4':  'bass_recorder_E4.mp3'
+          },
+          baseUrl: './bass-recorder/'
+        }).connect(cho);
+        await Tone.loaded();
+        for (const ev of noteEvents) smp.triggerAttackRelease(ev.note, ev.duration, ev.time);
+      }, durationSec);
+      return toneBuf.get();
+    }
+    function audioBufferToWav(buffer) {
+      const numCh = buffer.numberOfChannels, sr = buffer.sampleRate, numSamp = buffer.length;
+      const bps = 2, ba = numCh * bps, br = sr * ba, ds = numSamp * ba, bs = 44 + ds;
+      const out = new Uint8Array(bs); const view = new DataView(out.buffer);
+      const w = (o, s) => { for (let i=0;i<s.length;i++) view.setUint8(o+i, s.charCodeAt(i)); };
+      w(0,'RIFF'); view.setUint32(4, bs-8, true); w(8,'WAVE'); w(12,'fmt ');
+      view.setUint32(16,16,true); view.setUint16(20,1,true); view.setUint16(22,numCh,true);
+      view.setUint32(24,sr,true); view.setUint32(28,br,true); view.setUint16(32,ba,true);
+      view.setUint16(34,16,true); w(36,'data'); view.setUint32(40,ds,true);
+      const ch = []; for (let c=0;c<numCh;c++) ch.push(buffer.getChannelData(c));
+      let offset = 44;
+      for (let i=0;i<numSamp;i++) for (let c=0;c<numCh;c++) {
+        let s = Math.max(-1, Math.min(1, ch[c][i]));
+        s = s < 0 ? s*0x8000 : s*0x7FFF;
+        view.setInt16(offset, s, true); offset += 2;
+      }
+      return out;
+    }
+
+    // ── postMessage entry ───────────────────────────────────────────────────
+    window.addEventListener('message', (event) => {
+      const data = event.data;
+      if (!data || typeof data !== 'object') return;
+      const type = data.type;
+      try {
+        if (type === 'BD_INIT') {
+          storedText = (data.payload && data.payload.text) || '';
+          regenerateAbc();
+        } else if (type === 'bd_script_update') {
+          storedText = typeof data.script === 'string' ? data.script : '';
+          regenerateAbc();
+        } else if (type === 'bd_script_request') {
+          postToParent({ type: 'bd_script_response', script: currentGrammarScript() });
+        } else if (type === 'BD_STOP') {
+          teardownPlayback();
+          playerState = 'stopped'; setStatus('Stopped'); updateControls();
+        }
+      } catch (err) {
+        console.error('music_module: postMessage error', err);
+        setStatus('Message error: ' + err.message, true);
+      }
+    });
+  </script>
+</body>
+</html>
