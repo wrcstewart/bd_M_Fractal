@@ -671,6 +671,16 @@
                 }
               }
             }
+          } else {
+            // First horizontal (v-fix 2026-08-07): seed effectiveY from the
+            // RAW starting y (wrapped into [0, scaleLength)) rather than
+            // always 0. Different iterations start at genuinely different
+            // absolute y (iter 2 slice at y=2, iter 3 at y=8, iter 4 at
+            // y=26, …) so this seeding gives each iteration a distinct
+            // opening note — otherwise Peano's self-similar structure
+            // means the delta sequence is identical and all iterations
+            // sound the same at the start.
+            effectiveY = ((rawY % scaleLength) + scaleLength) % scaleLength;
           }
           prevRawY = rawY;
           out.push({ ...run, y1: effectiveY, y2: effectiveY });
