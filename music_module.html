@@ -462,19 +462,40 @@
       return g;
     }
 
-    // Expand L-system via depth-first streaming. Because rewriting is
-    // context-free (each symbol's expansion depends only on itself), we
-    // can emit symbols of the n-th iteration one at a time via DFS
-    // recursion, without ever materialising an intermediate iteration.
-    // Memory cost is O(iterations) for the recursion stack instead of
-    // O(k^iterations) for the full string. Iter 20 becomes as cheap as
-    // iter 3 for the same truncation length.
+    // Compute the total symbol length of expanding `axiom` under `rules`
+    // for `iterations` iterations, WITHOUT actually materialising the
+    // string. Uses recursion + memoisation on (symbol, remaining-depth)
+    // pairs. Needed for the skip mechanism — knowing how big iter (N−1)
+    // is tells us how many leading symbols to skip in iter N.
+    function computeExpansionLength(axiom, rules, iterations) {
+      const cache = new Map();
+      function len(sym, depth) {
+        if (depth === 0 || rules[sym] === undefined) return 1;
+        const key = sym + '@' + depth;
+        if (cache.has(key)) return cache.get(key);
+        let total = 0;
+        const rule = rules[sym];
+        for (let i = 0; i < rule.length; i++) {
+          total += len(rule[i], depth - 1);
+        }
+        cache.set(key, total);
+        return total;
+      }
+      let total = 0;
+      for (const ch of axiom) total += len(ch, iterations);
+      return total;
+    }
+
+    // Expand L-system via depth-first streaming, up to `maxChars` symbols.
+    // Because rewriting is context-free (each symbol's expansion depends
+    // only on itself), we can emit iter-N's symbols one at a time via DFS
+    // recursion without ever materialising an intermediate iteration.
+    // Memory cost is O(iterations) for the stack instead of O(k^iter).
     //
-    // Collector takes at most MAX_TURTLE_INPUT_CHARS symbols and stops.
-    // The recursion is coded as an explicit-stack loop rather than a JS
-    // generator function to avoid per-yield GC pressure at large sizes.
-    function expandLSystem(axiom, rules, iterations) {
-      const cap = MAX_TURTLE_INPUT_CHARS;
+    // Coded as an explicit-stack loop rather than a JS generator function
+    // to avoid per-yield GC pressure at ~million-symbol outputs.
+    function expandLSystem(axiom, rules, iterations, maxChars) {
+      const cap = maxChars;
       const parts = [];
       let truncated = false;
       // Explicit-stack DFS. Each frame is {expansion, index, depth}:
@@ -504,26 +525,27 @@
     }
 
     // Turtle: walk the symbol string with F=forward, +=turn CCW, -=turn CW.
-    // Heading in degrees, 0 = east. Returns [{x1,y1,x2,y2,isHorizontal,length}, …].
+    // Heading in degrees, 0 = east. Each F emits a segment tagged with
+    // the source symbol index (needed for the skip mechanism — we walk
+    // the whole prefix to maintain turtle state but only KEEP segments
+    // from symIdx ≥ skipSymbols downstream).
     function turtleWalk(symbols, angleDeg) {
       const segments = [];
       let x = 0, y = 0, heading = 0;
-      for (const ch of symbols) {
+      for (let i = 0; i < symbols.length; i++) {
+        const ch = symbols[i];
         if (ch === 'F') {
           const rad = heading * Math.PI / 180;
           const dx = Math.cos(rad), dy = Math.sin(rad);
           const nx = x + dx, ny = y + dy;
-          // At 90° angles cos/sin are ±1 or 0 exactly (up to fp noise). Use a
-          // tolerance to classify as horizontal or vertical.
           const isHorizontal = Math.abs(dx) > 0.5;
-          segments.push({ x1: x, y1: y, x2: nx, y2: ny, isHorizontal, length: 1 });
+          segments.push({ symIdx: i, x1: x, y1: y, x2: nx, y2: ny, isHorizontal, length: 1 });
           x = nx; y = ny;
         } else if (ch === '+') {
           heading = (heading + angleDeg) % 360;
         } else if (ch === '-') {
           heading = (heading - angleDeg + 360) % 360;
         }
-        // any other letter (A, B, …) is a non-drawing placeholder — skip.
       }
       return segments;
     }
@@ -739,15 +761,33 @@
       g.scale        = SCALE_NAMES[getStepperValue('scale')] || 'major';
       g.root         = getStepperValue('root');
 
+      // Skip mechanism (user 2026-08-07): iter N and iter (N-1) share the
+      // same first L(N-1) symbols (DFS emission property). Skipping past
+      // that prefix means every stepper increment on iterations actually
+      // reveals new material. Expansion cap grows to skip + emit-cap so
+      // we always have at least MAX_TURTLE_INPUT_CHARS of post-skip
+      // material.
+      const skipSymbols = g.iterations > 1
+        ? computeExpansionLength(g.axiom, g.rules, g.iterations - 1)
+        : 0;
+      const emitCap = skipSymbols + MAX_TURTLE_INPUT_CHARS;
       const { symbols, turtleTruncated } =
-        expandLSystem(g.axiom, g.rules, g.iterations);
-      const segments = turtleWalk(symbols, g.angle);
+        expandLSystem(g.axiom, g.rules, g.iterations, emitCap);
+      const allSegments = turtleWalk(symbols, g.angle);
+      // Slice off segments that fall inside the shared prefix.
+      const firstIdx = allSegments.findIndex(s => s.symIdx >= skipSymbols);
+      const segments = firstIdx >= 0 ? allSegments.slice(firstIdx) : allSegments;
       derivedAbc = generateAbc(segments, g);
-      lastGenerationInfo = { turtleTruncated, symbolsLen: symbols.length };
+      lastGenerationInfo = {
+        turtleTruncated,
+        symbolsLen: symbols.length,
+        skipSymbols,
+        skippedSegments: firstIdx >= 0 ? firstIdx : 0
+      };
       abcPaneEl.textContent = derivedAbc;
       loadDerivedAbcIntoPlayer();
     }
-    let lastGenerationInfo = { turtleTruncated: false, symbolsLen: 0 };
+    let lastGenerationInfo = { turtleTruncated: false, symbolsLen: 0, skipSymbols: 0, skippedSegments: 0 };
 
     // ── Audio: reused from bd_M_ABC ─────────────────────────────────────────
     let reverb, vibrato, chorus, sampler;
@@ -868,8 +908,11 @@
       playerState = 'stopped';
       abcReady = true;
       let readyMsg = `${notes.length} notes, ${endTimeSecs.toFixed(1)}s`;
-      if (generateAbcTruncated) readyMsg += ` (notes capped at ${MAX_NOTES})`;
-      if (lastGenerationInfo.turtleTruncated) readyMsg += ` [turtle input trimmed to ${MAX_TURTLE_INPUT_CHARS} chars]`;
+      if (lastGenerationInfo.skipSymbols > 0) {
+        readyMsg += ` (skipped ${lastGenerationInfo.skippedSegments} prefix segs = iter ${'?'} shared)`;
+      }
+      if (generateAbcTruncated) readyMsg += ` [notes capped at ${MAX_NOTES}]`;
+      if (lastGenerationInfo.turtleTruncated) readyMsg += ` [turtle trimmed]`;
       setStatus(samplerReady ? `Ready — ${readyMsg}` : 'Loading samples…');
       updateControls();
     }
