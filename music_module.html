@@ -328,12 +328,18 @@
     };
     const SCALE_NAMES = Object.keys(SCALES);
     const NOTE_NAMES  = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
-    // ABC key-signature strings for each scale (used in the K: header)
+    // ABC key-signature strings for each scale (used in the K: header).
+    // Pentatonic here is major-pentatonic (C D E G A) — all naturals, needs
+    // K:maj so bare `e` and `a` don't get flattened by a K:min signature.
+    // Blues also uses K:maj because its "flat" notes (Eb, Bb) are already
+    // emitted with explicit sharps (^D, ^A) by midiToAbc, so no implicit
+    // flats are needed — and a K:min signature would spuriously flatten
+    // its F natural if we ever emitted bare `a` in a subsequent octave.
     const SCALE_TO_ABC_KEY_SUFFIX = {
       minor:      'min',
       major:      'maj',
-      pentatonic: 'min',   // no distinct pentatonic key; treat as minor for accidentals
-      blues:      'min'
+      pentatonic: 'maj',
+      blues:      'maj'
     };
 
     // ── Steppers ────────────────────────────────────────────────────────────
