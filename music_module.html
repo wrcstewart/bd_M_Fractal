@@ -356,14 +356,17 @@
         isEnum: true, values: NOTE_NAMES }
     ];
 
-    // Safety caps — with streaming DFS expansion the "expansion memory
-    // ceiling" concept is gone. Only two caps needed:
-    //   MAX_TURTLE_INPUT_CHARS — how many symbols we take from the stream
-    //     before stopping. Each iteration produces a different first-N
-    //     symbols because the recursion goes one level deeper.
-    //   MAX_NOTES — post-collapse-and-reflect run count cap. Final safety
-    //     net so no single piece runs longer than ~8 minutes at 0.5 s/step.
+    // Safety caps:
+    //   MAX_TURTLE_INPUT_CHARS — how many post-skip symbols we walk.
+    //   MAX_TOTAL_EMISSION — hard ceiling on skip + post-skip. Grammar
+    //     growth is exponential per iteration; without this, iter 9+ of
+    //     Peano would ask for ~4 billion symbols and crash the JS heap
+    //     (silent failure = notes-don't-update). If the requested iter's
+    //     skip-plus-emit would exceed this, we drop the effective iter
+    //     count until it fits and surface the fact in the status readout.
+    //   MAX_NOTES — post-collapse-and-reflect run count cap.
     const MAX_TURTLE_INPUT_CHARS  = 300000;     // musical length limit
+    const MAX_TOTAL_EMISSION      = 5000000;    // hard memory ceiling
     const MAX_NOTES               = 1000;       // final note count cap
 
     STEPPERS.forEach((s) => {
@@ -762,32 +765,50 @@
       g.root         = getStepperValue('root');
 
       // Skip mechanism (user 2026-08-07): iter N and iter (N-1) share the
-      // same first L(N-1) symbols (DFS emission property). Skipping past
-      // that prefix means every stepper increment on iterations actually
-      // reveals new material. Expansion cap grows to skip + emit-cap so
-      // we always have at least MAX_TURTLE_INPUT_CHARS of post-skip
-      // material.
-      const skipSymbols = g.iterations > 1
-        ? computeExpansionLength(g.axiom, g.rules, g.iterations - 1)
-        : 0;
-      const emitCap = skipSymbols + MAX_TURTLE_INPUT_CHARS;
+      // same first L(N-1) symbols (DFS emission property). Skip that
+      // prefix so bumping iterations reveals new material.
+      //
+      // Effective-iteration guard (2026-08-07 v2): grammar growth is
+      // exponential (9× per iter for Peano), so L(N-1) at high iter can
+      // exceed our memory ceiling. Step the effective iteration count
+      // down until skip + emit-cap fits in MAX_TOTAL_EMISSION. Surface
+      // in status if the requested iter was reduced.
+      let effIter    = g.iterations;
+      let skipSymbols = 0;
+      let iterReduced = false;
+      while (effIter > 1) {
+        const proposedSkip = computeExpansionLength(g.axiom, g.rules, effIter - 1);
+        if (proposedSkip + MAX_TURTLE_INPUT_CHARS <= MAX_TOTAL_EMISSION) {
+          skipSymbols = proposedSkip;
+          break;
+        }
+        effIter--;
+        iterReduced = true;
+      }
+      const emitCap = Math.min(skipSymbols + MAX_TURTLE_INPUT_CHARS, MAX_TOTAL_EMISSION);
       const { symbols, turtleTruncated } =
-        expandLSystem(g.axiom, g.rules, g.iterations, emitCap);
+        expandLSystem(g.axiom, g.rules, effIter, emitCap);
       const allSegments = turtleWalk(symbols, g.angle);
-      // Slice off segments that fall inside the shared prefix.
       const firstIdx = allSegments.findIndex(s => s.symIdx >= skipSymbols);
       const segments = firstIdx >= 0 ? allSegments.slice(firstIdx) : allSegments;
       derivedAbc = generateAbc(segments, g);
       lastGenerationInfo = {
         turtleTruncated,
-        symbolsLen: symbols.length,
+        symbolsLen:  symbols.length,
         skipSymbols,
-        skippedSegments: firstIdx >= 0 ? firstIdx : 0
+        skippedSegments: firstIdx >= 0 ? firstIdx : 0,
+        requestedIter:   g.iterations,
+        effectiveIter:   effIter,
+        iterReduced
       };
       abcPaneEl.textContent = derivedAbc;
       loadDerivedAbcIntoPlayer();
     }
-    let lastGenerationInfo = { turtleTruncated: false, symbolsLen: 0, skipSymbols: 0, skippedSegments: 0 };
+    let lastGenerationInfo = {
+      turtleTruncated: false, symbolsLen: 0,
+      skipSymbols: 0, skippedSegments: 0,
+      requestedIter: 0, effectiveIter: 0, iterReduced: false
+    };
 
     // ── Audio: reused from bd_M_ABC ─────────────────────────────────────────
     let reverb, vibrato, chorus, sampler;
@@ -908,8 +929,11 @@
       playerState = 'stopped';
       abcReady = true;
       let readyMsg = `${notes.length} notes, ${endTimeSecs.toFixed(1)}s`;
+      if (lastGenerationInfo.iterReduced) {
+        readyMsg += ` [iter ${lastGenerationInfo.requestedIter} too big → using ${lastGenerationInfo.effectiveIter}]`;
+      }
       if (lastGenerationInfo.skipSymbols > 0) {
-        readyMsg += ` (skipped ${lastGenerationInfo.skippedSegments} prefix segs = iter ${'?'} shared)`;
+        readyMsg += ` (skipped ${lastGenerationInfo.skippedSegments} prefix segs)`;
       }
       if (generateAbcTruncated) readyMsg += ` [notes capped at ${MAX_NOTES}]`;
       if (lastGenerationInfo.turtleTruncated) readyMsg += ` [turtle trimmed]`;
