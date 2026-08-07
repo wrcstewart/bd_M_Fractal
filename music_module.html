@@ -508,10 +508,44 @@
       return accid + name;
     }
 
-    // Generate ABC string from a params object + segments.
-    // Uses L:1/4 and each horizontal segment = one quarter note. Rests span
-    // verticalTime × 1 quarter beat.
+    // Collapse consecutive segments in the same class-and-position into
+    // "runs" — Prusinkiewicz's interpretation (ABoP ch. 6). Consecutive
+    // horizontal Fs at the same y merge into one sustained note whose
+    // duration = run length. Consecutive vertical Fs merge into one longer
+    // rest. Result: notes of varying length (1, 2, 3+ beats) rather than
+    // uniform quarters, which is what makes the derived melody musically
+    // interesting.
+    function collapseRuns(segments) {
+      const out = [];
+      let i = 0;
+      while (i < segments.length) {
+        const seg = segments[i];
+        let runLen = 1;
+        let j = i + 1;
+        if (seg.isHorizontal) {
+          const y = Math.round(seg.y1);
+          while (j < segments.length && segments[j].isHorizontal
+                 && Math.round(segments[j].y1) === y) {
+            runLen++;
+            j++;
+          }
+        } else {
+          while (j < segments.length && !segments[j].isHorizontal) {
+            runLen++;
+            j++;
+          }
+        }
+        out.push({ ...seg, length: runLen });
+        i = j;
+      }
+      return out;
+    }
+
+    // Generate ABC string from a params object + segments. Runs are collapsed
+    // first so each horizontal run → one note with duration = run length,
+    // each vertical run → one rest (scaled by verticalTime).
     function generateAbc(segments, g) {
+      const runs = collapseRuns(segments);
       const bpm = Math.max(20, Math.round(60 / g.stepSeconds));
       const rootName = NOTE_NAMES[g.root];
       const keySig = rootName + (SCALE_TO_ABC_KEY_SUFFIX[g.scale] || 'min');
@@ -523,33 +557,39 @@
         `Q:1/4=${bpm}`,
         `K:${keySig}`,
       ];
+      // ABC length token for an integer or simple fractional beat count.
+      function lenToken(len) {
+        if (Math.abs(len - 1) < 0.01) return '';
+        if (Math.abs(len - 2) < 0.01) return '2';
+        if (Math.abs(len - 3) < 0.01) return '3';
+        if (Math.abs(len - 4) < 0.01) return '4';
+        if (Math.abs(len - 0.5) < 0.01) return '/2';
+        if (Number.isInteger(len)) return String(len);
+        return len.toFixed(2);   // fractional — abcjs accepts
+      }
       let body = '';
-      let barCount = 0;
-      const barLength = 4;      // quarter notes per bar (M:4/4, L:1/4)
       let barAccum = 0;
-      for (const seg of segments) {
-        if (seg.isHorizontal) {
-          const midi = pitchForY(seg.y1, g.scale, g.root, 4);
-          body += midiToAbc(midi);
-          barAccum += 1;
+      const barLength = 4;
+      let barCount = 0;
+      for (const run of runs) {
+        let beats;
+        if (run.isHorizontal) {
+          const midi = pitchForY(run.y1, g.scale, g.root, 4);
+          body += midiToAbc(midi) + lenToken(run.length);
+          beats = run.length;
         } else {
-          if (g.verticalTime > 0) {
-            // Rests: 'z' = quarter rest; z2 = half; z/2 = eighth
-            const restLen = g.verticalTime;
-            if (Math.abs(restLen - 1) < 0.01)      body += 'z';
-            else if (Math.abs(restLen - 2) < 0.01) body += 'z2';
-            else if (Math.abs(restLen - 0.5) < 0.01) body += 'z/2';
-            else body += `z${restLen}`;    // fractional lengths accepted by abcjs
-            barAccum += restLen;
-          }
-          // else: silent transition — nothing emitted
+          if (g.verticalTime <= 0) continue;   // silent transition
+          const restBeats = g.verticalTime * run.length;
+          body += 'z' + lenToken(restBeats);
+          beats = restBeats;
         }
-        // Every ~barLength quarter beats insert a bar line for readability.
-        if (barAccum >= barLength) {
+        barAccum += beats;
+        if (barAccum >= barLength - 0.001) {
           body += '|';
           barCount++;
           barAccum = 0;
           if (barCount % 4 === 0) body += '\n';
+          else body += ' ';
         } else {
           body += ' ';
         }
