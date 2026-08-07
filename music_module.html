@@ -633,22 +633,28 @@
       return lines.join('\n') + '\n' + body.trim() + '\n';
     }
 
-    function regenerateAbc() {
+    // Sync steppers FROM the incoming script. Called only when a fresh
+    // script arrives (BD_INIT / bd_script_update / initial load) so a user's
+    // stepper tweaks aren't wiped between edits.
+    function syncSteppersFromScript() {
       const g = parseGrammarFromScript(storedText || '');
-      // Sync steppers from parsed script so the panel reflects the current
-      // params (also on first arrival).
       setStepperValue('iterations',    g.iterations);
       setStepperValue('step_seconds',  g.stepSeconds);
       setStepperValue('vertical_time', g.verticalTime);
       setStepperValue('scale',         SCALE_NAMES.indexOf(g.scale));
       setStepperValue('root',          g.root);
+    }
 
-      // But also allow stepper edits to override script values (live tweak).
-      // If any stepper differs from parsed value, use the stepper's value.
+    // Re-derive the ABC from CURRENT stepper values + parsed script's
+    // non-stepper params (axiom, rules, angle). Does NOT touch stepper
+    // display — that was the earlier bug where every stepper click
+    // immediately reverted itself.
+    function regenerateAbc() {
+      const g = parseGrammarFromScript(storedText || '');
       g.iterations   = getStepperValue('iterations');
       g.stepSeconds  = getStepperValue('step_seconds');
       g.verticalTime = getStepperValue('vertical_time');
-      g.scale        = SCALE_NAMES[getStepperValue('scale')] || 'minor';
+      g.scale        = SCALE_NAMES[getStepperValue('scale')] || 'major';
       g.root         = getStepperValue('root');
 
       const symbols = expandLSystem(g.axiom, g.rules, g.iterations);
@@ -1055,9 +1061,11 @@
       try {
         if (type === 'BD_INIT') {
           storedText = (data.payload && data.payload.text) || '';
+          syncSteppersFromScript();
           regenerateAbc();
         } else if (type === 'bd_script_update') {
           storedText = typeof data.script === 'string' ? data.script : '';
+          syncSteppersFromScript();
           regenerateAbc();
         } else if (type === 'bd_script_request') {
           postToParent({ type: 'bd_script_response', script: currentGrammarScript() });
