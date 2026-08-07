@@ -3,9 +3,9 @@
 Standalone deployment of the **bd_M_Fractal** music module — an
 L-system driven fractal-curve to ABC melody generator, following
 Prusinkiewicz's approach ("The Algorithmic Beauty of Plants",
-Chapter 6). The default grammar is the Hilbert curve; the same
-module handles Peano, dragon, and other 90° curves via different
-grammars.
+Chapter 6). The default grammar is the Peano curve on the pentatonic
+scale (Prusinkiewicz's book-recommended pairing); the same module
+handles Hilbert, dragon, and other 90° curves via different grammars.
 
 Live at: **https://wrcstewart.github.io/bd_M_Fractal/preview.html**
 
@@ -28,15 +28,23 @@ Live at: **https://wrcstewart.github.io/bd_M_Fractal/preview.html**
 
 ```
 %%bd_module bd_M_Fractal
+%%bd_axiom X
+%%bd_rule X: XFYFX+F+YFXFY-F-XFYFX
+%%bd_rule Y: YFXFY-F-XFYFX+F+YFXFY
+%%bd_iterations 3
+%%bd_angle 90
+%%bd_scale pentatonic       # minor | major | pentatonic | blues
+%%bd_root C                 # C, C#, D, … or a MIDI index 0–11
+%%bd_step_seconds 0.2       # duration of one horizontal segment
+%%bd_vertical_time 0.2      # fraction of a step used for vertical rests
+```
+
+Swap the axiom + rules for other Prusinkiewicz curves — e.g., Hilbert:
+
+```
 %%bd_axiom A
 %%bd_rule A: -BF+AFA+FB-
 %%bd_rule B: +AF-BFB-FA+
-%%bd_iterations 3
-%%bd_angle 90
-%%bd_scale minor            # minor | major | pentatonic | blues
-%%bd_root C                 # C, C#, D, … or a MIDI index 0–11
-%%bd_step_seconds 0.5       # duration of one horizontal segment
-%%bd_vertical_time 0.5      # fraction of a step used for vertical rests
 ```
 
 There is **no** `%%bd_score` block — the ABC is *derived* every time

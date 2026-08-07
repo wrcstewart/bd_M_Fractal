@@ -653,24 +653,23 @@
     // for anyone tracing why URL path parsing disappeared.
 
     // ── Default script ────────────────────────────────────────────────────────
-    // Hilbert curve L-system (Prusinkiewicz, "The Algorithmic Beauty of
-    // Plants"). Iteration 3 produces ~84 turtle steps → ~42 notes at 0.5 s
-    // each → ~40 second piece.
-    // Default scale is C major — chosen so the ABC pane reads as bare
-    // letters C D E F G A B with no accidentals (readability). Switch to
-    // minor / pentatonic / blues via the scale stepper; for now the ABC
-    // encoder still emits explicit sharps in those scales — cosmetic bug
-    // to be addressed after visual verification.
+    // Peano curve L-system (Prusinkiewicz, "The Algorithmic Beauty of
+    // Plants"). Two mirror-image rules for X and Y; 9-fold subdivision
+    // (3×3) at each iteration vs. Hilbert's 4-fold. Denser texture,
+    // more sustained horizontal runs.
+    // Default scale = pentatonic on C (Prusinkiewicz specifically noted
+    // Peano pairs well with pentatonic). Faster stepping (0.2 s/step and
+    // 0.2 verticalTime multiplier) for a more flowing piece.
     const DEFAULT_SCRIPT = `%%bd_module bd_M_Fractal
-%%bd_axiom A
-%%bd_rule A: -BF+AFA+FB-
-%%bd_rule B: +AF-BFB-FA+
+%%bd_axiom X
+%%bd_rule X: XFYFX+F+YFXFY-F-XFYFX
+%%bd_rule Y: YFXFY-F-XFYFX+F+YFXFY
 %%bd_iterations 3
 %%bd_angle 90
-%%bd_scale major
+%%bd_scale pentatonic
 %%bd_root C
-%%bd_step_seconds 0.5
-%%bd_vertical_time 0.5`;
+%%bd_step_seconds 0.2
+%%bd_vertical_time 0.2`;
 
     // Music preview has NO outer stepper column — the music module already
     // exposes its 8 %%bd_ params via its own right-side stepper column
