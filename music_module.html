@@ -695,6 +695,9 @@
     // first so each horizontal run → one note with duration = run length,
     // each vertical run → one rest (scaled by verticalTime). Then the
     // pitch-reflection rule keeps effective y in a bounded 2-octave range.
+    // Scan forward to the first horizontal run at tonic (scale degree 0) so
+    // every iteration opens on the root note — user 2026-08-07: "start the
+    // sequence at the first C - its a bit wierd to start at d in a scale of C".
     // Finally, cap total runs at MAX_NOTES to keep any single piece from
     // dragging on forever (~5 min max at 0.5s/step with the current cap).
     let generateAbcTruncated = false;
@@ -703,6 +706,13 @@
       const scaleLen = (SCALES[g.scale] || SCALES.major).length;
       const rawRuns  = collapseRuns(segments);
       let runs       = applyPitchReflection(rawRuns, scaleLen);
+      // Scan forward to the first horizontal at tonic (y ≡ 0 mod scaleLen).
+      const firstTonic = runs.findIndex(r => {
+        if (!r.isHorizontal) return false;
+        const mod = ((Math.round(r.y1) % scaleLen) + scaleLen) % scaleLen;
+        return mod === 0;
+      });
+      if (firstTonic > 0) runs = runs.slice(firstTonic);
       if (runs.length > MAX_NOTES) {
         console.warn(`[bd_M_Fractal] truncating ${runs.length} runs → ${MAX_NOTES}`);
         runs = runs.slice(0, MAX_NOTES);
