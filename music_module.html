@@ -343,8 +343,11 @@
     };
 
     // ── Steppers ────────────────────────────────────────────────────────────
+    // Iterations upper bound: 10. At iter 10 a Hilbert grammar expands to
+     // several million chars — the caps in expandLSystem + generateAbc keep
+     // memory and note count sane regardless of what the user asks for.
     const STEPPERS = [
-      { name: 'iterations',    min: 1,   max: 6,   step: 1,    fallback: 3 },
+      { name: 'iterations',    min: 1,   max: 10,  step: 1,    fallback: 3 },
       { name: 'step_seconds',  min: 0.1, max: 2.0, step: 0.1,  fallback: 0.5 },
       { name: 'vertical_time', min: 0.0, max: 2.0, step: 0.1,  fallback: 0.5 },
       { name: 'scale',         min: 0,   max: SCALE_NAMES.length - 1, step: 1, fallback: 0,
@@ -352,6 +355,12 @@
       { name: 'root',          min: 0,   max: 11,  step: 1,    fallback: 0,
         isEnum: true, values: NOTE_NAMES }
     ];
+
+    // Safety caps — protect against runaway string length + long pieces.
+    // Growth is ~4× per iteration for standard Hilbert-style grammars, so
+    // caps here matter most beyond iteration 6–7.
+    const MAX_EXPANSION_CHARS = 200000;   // ~50 000 turtle steps upper limit
+    const MAX_NOTES           = 1000;     // cap collapsed run count post-reflect
 
     STEPPERS.forEach((s) => {
       const row = document.createElement('div');
@@ -445,12 +454,22 @@
 
     function expandLSystem(axiom, rules, iterations) {
       let current = axiom;
+      let stoppedEarly = false;
       for (let i = 0; i < iterations; i++) {
         let next = '';
         for (const ch of current) next += (rules[ch] !== undefined ? rules[ch] : ch);
+        // Bail out if the NEXT iteration has blown past our safety cap. We
+        // keep the previous iteration's string rather than truncating a
+        // half-expanded one — cleaner musically.
+        if (next.length > MAX_EXPANSION_CHARS) {
+          stoppedEarly = true;
+          console.warn(`[bd_M_Fractal] L-system: stopping at iter ${i}/${iterations} — ` +
+                       `${next.length} chars exceeds ${MAX_EXPANSION_CHARS} cap`);
+          break;
+        }
         current = next;
       }
-      return current;
+      return { symbols: current, stoppedEarly };
     }
 
     // Turtle: walk the symbol string with F=forward, +=turn CCW, -=turn CW.
@@ -600,11 +619,20 @@
     // Generate ABC string from a params object + segments. Runs are collapsed
     // first so each horizontal run → one note with duration = run length,
     // each vertical run → one rest (scaled by verticalTime). Then the
-    // pitch-reflection rule keeps effective y in a bounded octave.
+    // pitch-reflection rule keeps effective y in a bounded 2-octave range.
+    // Finally, cap total runs at MAX_NOTES to keep any single piece from
+    // dragging on forever (~5 min max at 0.5s/step with the current cap).
+    let generateAbcTruncated = false;
     function generateAbc(segments, g) {
+      generateAbcTruncated = false;
       const scaleLen = (SCALES[g.scale] || SCALES.major).length;
       const rawRuns  = collapseRuns(segments);
-      const runs     = applyPitchReflection(rawRuns, scaleLen);
+      let runs       = applyPitchReflection(rawRuns, scaleLen);
+      if (runs.length > MAX_NOTES) {
+        console.warn(`[bd_M_Fractal] truncating ${runs.length} runs → ${MAX_NOTES}`);
+        runs = runs.slice(0, MAX_NOTES);
+        generateAbcTruncated = true;
+      }
       const bpm = Math.max(20, Math.round(60 / g.stepSeconds));
       const rootName = NOTE_NAMES[g.root];
       const keySig = rootName + (SCALE_TO_ABC_KEY_SUFFIX[g.scale] || 'min');
@@ -680,12 +708,14 @@
       g.scale        = SCALE_NAMES[getStepperValue('scale')] || 'major';
       g.root         = getStepperValue('root');
 
-      const symbols = expandLSystem(g.axiom, g.rules, g.iterations);
+      const { symbols, stoppedEarly } = expandLSystem(g.axiom, g.rules, g.iterations);
       const segments = turtleWalk(symbols, g.angle);
       derivedAbc = generateAbc(segments, g);
+      lastGenerationInfo = { stoppedEarly, symbolsLen: symbols.length };
       abcPaneEl.textContent = derivedAbc;
       loadDerivedAbcIntoPlayer();
     }
+    let lastGenerationInfo = { stoppedEarly: false, symbolsLen: 0 };
 
     // ── Audio: reused from bd_M_ABC ─────────────────────────────────────────
     let reverb, vibrato, chorus, sampler;
@@ -805,7 +835,10 @@
       teardownPlayback();
       playerState = 'stopped';
       abcReady = true;
-      setStatus(samplerReady ? `Ready — ${notes.length} notes, ${endTimeSecs.toFixed(1)}s` : 'Loading samples…');
+      let readyMsg = `${notes.length} notes, ${endTimeSecs.toFixed(1)}s`;
+      if (generateAbcTruncated) readyMsg += ` (capped at ${MAX_NOTES})`;
+      if (lastGenerationInfo.stoppedEarly) readyMsg += ` [expansion halted @ ${lastGenerationInfo.symbolsLen} chars]`;
+      setStatus(samplerReady ? `Ready — ${readyMsg}` : 'Loading samples…');
       updateControls();
     }
 
