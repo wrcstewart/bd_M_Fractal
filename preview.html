@@ -536,14 +536,13 @@
     </div>
 
     <aside class="side-panel">
-      <!-- 2026-07-15 (Op 2, content-moderation) — readonly. The script must
-           only be modified via the sliders below (structured, template-bounded
-           edits). Keyboard typing would introduce arbitrary text into the
-           payload that Copy-Link-back-to-BD carries, and BD's receiver would
-           have no way to distinguish typed content from slider-derived
-           content. Sliders continue to write to .value programmatically. -->
-      <textarea id="script-input" spellcheck="false" readonly
-                title="Read-only — use the sliders below to modify the script"></textarea>
+      <!-- Editable in bd_M_Fractal — inherited readonly from bd_M_ABC's
+           preview but this module's grammar has axiom + rules (not just
+           slider-controllable numerics), so authors must be able to type.
+           When we wire back into BD later, content-moderation gating can be
+           reintroduced at the BD-receive side rather than the standalone. -->
+      <textarea id="script-input" spellcheck="false"
+                title="Edit the L-system grammar / params directly. Steppers on the module drive stepper-editable params (iterations, step_seconds, vertical_time, scale, root)."></textarea>
       <div class="action-bar">
         <button id="copy-link-btn" title="Copy a shareable URL that reproduces this script">Copy Link</button>
         <button id="copy-btn"      title="Copy the script to the clipboard">Copy</button>
