@@ -541,11 +541,47 @@
       return out;
     }
 
+    // Pitch-reflection rule (user 2026-08-07): a Hilbert curve at high n
+    // ranges over many y values, mapping to pitches many octaves apart.
+    // To keep the melody in a musical range, walk the y-deltas with a
+    // reflecting boundary: start at "root" (effective y=0). Apply each
+    // horizontal run's y-delta to the effective y. If effective y ever
+    // exceeds one octave above start (y > scaleLength), flip the delta
+    // sign for subsequent runs. Unflip when effective y returns to 0
+    // or below. Result: notes trace the curve's shape but stay bounded
+    // to roughly [tonic − …, tonic + octave].
+    function applyPitchReflection(runs, scaleLength) {
+      const bound = scaleLength;
+      const out = [];
+      let prevRawY   = null;
+      let effectiveY = 0;
+      let inverted   = false;
+      for (const run of runs) {
+        if (run.isHorizontal) {
+          const rawY = Math.round(run.y1);
+          if (prevRawY !== null) {
+            const delta = rawY - prevRawY;
+            effectiveY += inverted ? -delta : delta;
+          }
+          prevRawY = rawY;
+          if (effectiveY >  bound) inverted = true;
+          else if (effectiveY <= 0) inverted = false;
+          out.push({ ...run, y1: effectiveY, y2: effectiveY });
+        } else {
+          out.push(run);
+        }
+      }
+      return out;
+    }
+
     // Generate ABC string from a params object + segments. Runs are collapsed
     // first so each horizontal run → one note with duration = run length,
-    // each vertical run → one rest (scaled by verticalTime).
+    // each vertical run → one rest (scaled by verticalTime). Then the
+    // pitch-reflection rule keeps effective y in a bounded octave.
     function generateAbc(segments, g) {
-      const runs = collapseRuns(segments);
+      const scaleLen = (SCALES[g.scale] || SCALES.major).length;
+      const rawRuns  = collapseRuns(segments);
+      const runs     = applyPitchReflection(rawRuns, scaleLen);
       const bpm = Math.max(20, Math.round(60 / g.stepSeconds));
       const rootName = NOTE_NAMES[g.root];
       const keySig = rootName + (SCALE_TO_ABC_KEY_SUFFIX[g.scale] || 'min');
