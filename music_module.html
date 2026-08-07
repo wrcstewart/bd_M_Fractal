@@ -547,31 +547,48 @@
       return out;
     }
 
-    // Pitch-reflection rule (user 2026-08-07): a Hilbert curve at high n
-    // ranges over many y values, mapping to pitches many octaves apart.
-    // To keep the melody in a musical range, walk the y-deltas with a
-    // reflecting boundary: start at "root" (effective y=0). Apply each
-    // horizontal run's y-delta to the effective y. If effective y ever
-    // exceeds one octave above start (y > scaleLength), flip the delta
-    // sign for subsequent runs. Unflip when effective y returns to 0
-    // or below. Result: notes trace the curve's shape but stay bounded
-    // to roughly [tonic − …, tonic + octave].
+    // Pitch-reflection: walk the raw y-deltas as a "particle" bouncing
+    // between two walls at +scaleLength (one octave above tonic) and
+    // -scaleLength (one octave below tonic). Total span = two octaves,
+    // symmetrically around the starting note. Original asymmetric rule
+    // (2026-08-07) only reflected at the upper bound → user saw notes
+    // 4 octaves down. User's revised spec (2026-08-07 v2): reflect at
+    // the lower boundary too, at one octave below start rather than at
+    // start itself, so the effective range is [−octave, +octave].
+    //
+    // Implementation: one-step-at-a-time bouncing simulation. For each
+    // raw-delta of magnitude N, take N unit steps in the current
+    // direction. If a step would cross either wall, flip direction and
+    // retry — the step is bounced back into range without being
+    // consumed. Effective y always stays in [−scaleLength, +scaleLength].
     function applyPitchReflection(runs, scaleLength) {
-      const bound = scaleLength;
+      const upper =  scaleLength;
+      const lower = -scaleLength;
       const out = [];
-      let prevRawY   = null;
+      let prevRawY = null;
       let effectiveY = 0;
-      let inverted   = false;
+      let direction = 1;               // +1 = normal, -1 = inverted
       for (const run of runs) {
         if (run.isHorizontal) {
           const rawY = Math.round(run.y1);
           if (prevRawY !== null) {
-            const delta = rawY - prevRawY;
-            effectiveY += inverted ? -delta : delta;
+            const rawDelta = rawY - prevRawY;
+            if (rawDelta !== 0) {
+              let step = (rawDelta > 0 ? 1 : -1) * direction;
+              let remaining = Math.abs(rawDelta);
+              while (remaining > 0) {
+                const next = effectiveY + step;
+                if (next > upper || next < lower) {
+                  step = -step;
+                  direction = -direction;
+                } else {
+                  effectiveY = next;
+                  remaining--;
+                }
+              }
+            }
           }
           prevRawY = rawY;
-          if (effectiveY >  bound) inverted = true;
-          else if (effectiveY <= 0) inverted = false;
           out.push({ ...run, y1: effectiveY, y2: effectiveY });
         } else {
           out.push(run);
