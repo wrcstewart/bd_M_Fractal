@@ -435,7 +435,7 @@
       }
       if (Object.keys(foundRules).length) g.rules = foundRules;
       const iterM = text.match(/^%%bd_iterations\s+(\d+)/m);
-      if (iterM) g.iterations = Math.max(1, Math.min(6, parseInt(iterM[1], 10)));
+      if (iterM) g.iterations = Math.max(1, Math.min(20, parseInt(iterM[1], 10)));
       const angleM = text.match(/^%%bd_angle\s+([\d.]+)/m);
       if (angleM) g.angle = parseFloat(angleM[1]);
       const scaleM = text.match(/^%%bd_scale\s+(\w+)/m);
