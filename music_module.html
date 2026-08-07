@@ -343,11 +343,11 @@
     };
 
     // ── Steppers ────────────────────────────────────────────────────────────
-    // Iterations upper bound: 10. At iter 10 a Hilbert grammar expands to
-     // several million chars — the caps in expandLSystem + generateAbc keep
-     // memory and note count sane regardless of what the user asks for.
+    // Iterations upper bound: 20. Depth-first streaming expansion below
+    // means memory cost is O(iterations) rather than O(4^iterations), so
+    // iter 20 is as cheap as iter 3 for the same truncation length.
     const STEPPERS = [
-      { name: 'iterations',    min: 1,   max: 10,  step: 1,    fallback: 3 },
+      { name: 'iterations',    min: 1,   max: 20,  step: 1,    fallback: 3 },
       { name: 'step_seconds',  min: 0.1, max: 2.0, step: 0.1,  fallback: 0.5 },
       { name: 'vertical_time', min: 0.0, max: 2.0, step: 0.1,  fallback: 0.5 },
       { name: 'scale',         min: 0,   max: SCALE_NAMES.length - 1, step: 1, fallback: 0,
@@ -356,19 +356,13 @@
         isEnum: true, values: NOTE_NAMES }
     ];
 
-    // Safety caps — three layers, from most to least generous:
-    //   MAX_EXPANSION_CHARS — memory ceiling during L-system iteration.
-    //     If the NEXT iteration would exceed this, stop expanding early
-    //     (returns the previous iteration's full string). Only engages
-    //     around iter 11–12 for Hilbert.
-    //   MAX_TURTLE_INPUT_CHARS — truncate the FINAL expanded string to
-    //     this length before turtle-walking. Bounds musical length; each
-    //     iteration up to the memory cap still produces a genuinely
-    //     different truncation (iter 9's first 300 k chars != iter 8's
-    //     full string, because iter 9 has expanded every symbol once more).
+    // Safety caps — with streaming DFS expansion the "expansion memory
+    // ceiling" concept is gone. Only two caps needed:
+    //   MAX_TURTLE_INPUT_CHARS — how many symbols we take from the stream
+    //     before stopping. Each iteration produces a different first-N
+    //     symbols because the recursion goes one level deeper.
     //   MAX_NOTES — post-collapse-and-reflect run count cap. Final safety
     //     net so no single piece runs longer than ~8 minutes at 0.5 s/step.
-    const MAX_EXPANSION_CHARS     = 5000000;    // ~5 M char memory limit
     const MAX_TURTLE_INPUT_CHARS  = 300000;     // musical length limit
     const MAX_NOTES               = 1000;       // final note count cap
 
@@ -462,41 +456,45 @@
       return g;
     }
 
-    // Expand L-system. Uses array-join per iteration so cost stays O(n)
-    // even at multi-megabyte strings. Bails out only if the next iteration
-    // would exceed MAX_EXPANSION_CHARS (memory ceiling — normally not hit
-    // before iter 11 for Hilbert grammars). After expansion, truncate the
-    // final string to MAX_TURTLE_INPUT_CHARS so higher iterations still
-    // produce genuinely different musical output (each iteration N gives
-    // the first N-th-recursion chunk, different structure than iter N-1).
+    // Expand L-system via depth-first streaming. Because rewriting is
+    // context-free (each symbol's expansion depends only on itself), we
+    // can emit symbols of the n-th iteration one at a time via DFS
+    // recursion, without ever materialising an intermediate iteration.
+    // Memory cost is O(iterations) for the recursion stack instead of
+    // O(k^iterations) for the full string. Iter 20 becomes as cheap as
+    // iter 3 for the same truncation length.
+    //
+    // Collector takes at most MAX_TURTLE_INPUT_CHARS symbols and stops.
+    // The recursion is coded as an explicit-stack loop rather than a JS
+    // generator function to avoid per-yield GC pressure at large sizes.
     function expandLSystem(axiom, rules, iterations) {
-      let current = axiom;
-      let stoppedEarly = false;
-      let stoppedAt    = iterations;
-      for (let i = 0; i < iterations; i++) {
-        const parts = new Array(current.length);
-        for (let k = 0; k < current.length; k++) {
-          const ch = current[k];
-          parts[k] = (rules[ch] !== undefined) ? rules[ch] : ch;
+      const cap = MAX_TURTLE_INPUT_CHARS;
+      const parts = [];
+      let truncated = false;
+      // Explicit-stack DFS. Each frame is {expansion, index, depth}:
+      // 'expansion' is the string being iterated (axiom at the outer
+      // level, a rule's RHS deeper in); 'index' is the next symbol to
+      // process; 'depth' is remaining iterations to apply at this level.
+      const stack = [{ expansion: axiom, index: 0, depth: iterations }];
+      while (stack.length > 0) {
+        if (parts.length >= cap) { truncated = true; break; }
+        const frame = stack[stack.length - 1];
+        if (frame.index >= frame.expansion.length) {
+          stack.pop();
+          continue;
         }
-        const next = parts.join('');
-        if (next.length > MAX_EXPANSION_CHARS) {
-          stoppedEarly = true;
-          stoppedAt = i;
-          console.warn(`[bd_M_Fractal] L-system: memory cap hit at iter ${i + 1}/${iterations}, ` +
-                       `${next.length} > ${MAX_EXPANSION_CHARS}. Falling back to iter ${i}.`);
-          break;
+        const sym = frame.expansion[frame.index];
+        frame.index++;
+        const rule = rules[sym];
+        if (frame.depth === 0 || rule === undefined) {
+          // Leaf: emit the symbol as-is
+          parts.push(sym);
+        } else {
+          // Recurse: push a new frame at depth-1 over this rule's RHS
+          stack.push({ expansion: rule, index: 0, depth: frame.depth - 1 });
         }
-        current = next;
       }
-      // Final truncation for turtle walk — bounds musical length while
-      // preserving each iteration's distinct high-order-recursion signature.
-      let turtleTruncated = false;
-      if (current.length > MAX_TURTLE_INPUT_CHARS) {
-        current = current.substring(0, MAX_TURTLE_INPUT_CHARS);
-        turtleTruncated = true;
-      }
-      return { symbols: current, stoppedEarly, stoppedAt, turtleTruncated };
+      return { symbols: parts.join(''), turtleTruncated: truncated };
     }
 
     // Turtle: walk the symbol string with F=forward, +=turn CCW, -=turn CW.
@@ -735,15 +733,15 @@
       g.scale        = SCALE_NAMES[getStepperValue('scale')] || 'major';
       g.root         = getStepperValue('root');
 
-      const { symbols, stoppedEarly, stoppedAt, turtleTruncated } =
+      const { symbols, turtleTruncated } =
         expandLSystem(g.axiom, g.rules, g.iterations);
       const segments = turtleWalk(symbols, g.angle);
       derivedAbc = generateAbc(segments, g);
-      lastGenerationInfo = { stoppedEarly, stoppedAt, turtleTruncated, symbolsLen: symbols.length };
+      lastGenerationInfo = { turtleTruncated, symbolsLen: symbols.length };
       abcPaneEl.textContent = derivedAbc;
       loadDerivedAbcIntoPlayer();
     }
-    let lastGenerationInfo = { stoppedEarly: false, stoppedAt: 0, turtleTruncated: false, symbolsLen: 0 };
+    let lastGenerationInfo = { turtleTruncated: false, symbolsLen: 0 };
 
     // ── Audio: reused from bd_M_ABC ─────────────────────────────────────────
     let reverb, vibrato, chorus, sampler;
@@ -866,9 +864,6 @@
       let readyMsg = `${notes.length} notes, ${endTimeSecs.toFixed(1)}s`;
       if (generateAbcTruncated) readyMsg += ` (notes capped at ${MAX_NOTES})`;
       if (lastGenerationInfo.turtleTruncated) readyMsg += ` [turtle input trimmed to ${MAX_TURTLE_INPUT_CHARS} chars]`;
-      if (lastGenerationInfo.stoppedEarly) {
-        readyMsg += ` [expansion capped at iter ${lastGenerationInfo.stoppedAt}]`;
-      }
       setStatus(samplerReady ? `Ready — ${readyMsg}` : 'Loading samples…');
       updateControls();
     }
