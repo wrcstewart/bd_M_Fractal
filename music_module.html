@@ -155,6 +155,15 @@
     .playback-row button:hover:not(:disabled)  { background: #1a2a28; }
     .playback-row button:active:not(:disabled) { background: #243f3b; }
     .playback-row button:disabled              { opacity: 0.4; cursor: not-allowed; }
+    /* v-check canary — Play button in bright magenta so a stale-cached
+       music_module.html shows the old teal outline and a fresh one shows
+       this vivid fill. Remove once user confirms the deploy is live. */
+    #play-pause-btn {
+      background: #FF00FF !important;
+      color: #0a0a1a !important;
+      border-color: #FF00FF !important;
+      font-weight: bold;
+    }
 
     .control-panel {
       flex: 0 0 200px;
