@@ -156,11 +156,11 @@
     .playback-row button:active:not(:disabled) { background: #243f3b; }
     .playback-row button:disabled              { opacity: 0.4; cursor: not-allowed; }
     /* v-check canary — RGB rotation (feedback_canary_rotation).
-       Currently RED; next = green. */
+       Currently GREEN; next = blue. */
     #play-pause-btn {
-      background: #FF0000 !important;
-      color: #ffffff !important;
-      border-color: #FF0000 !important;
+      background: #00CC00 !important;
+      color: #0a0a1a !important;
+      border-color: #00CC00 !important;
       font-weight: bold;
     }
 
@@ -461,6 +461,7 @@
         angle:      90,
         scale:      'minor_pentatonic',
         root:       0,
+        rootOctave: 0,   // ABC-style ,/' suffix on %%bd_root shifts tonic octave
         stepSeconds:  0.2,
         verticalTime: 0.2,
         reverbWet:        0.35,
@@ -499,7 +500,13 @@
         const resolved = SCALES[raw] ? raw : SCALE_ALIASES[raw];
         if (resolved) g.scale = resolved;
       }
-      const rootM = text.match(/^%%bd_root\s+([A-G][#b]?|\d+)/m);
+      // ABC-style root: letter + optional accidental + optional octave
+      // suffix (',' × N = down N octaves, "'" × N = up N octaves).
+      // Clamped so the effective tonic MIDI lands in [45, 84] — that
+      // keeps the reflection's ±octave range inside piano-minus-one-
+      // octave-each-end (MIDI [33, 96]), guaranteeing all derived notes
+      // fit on an 88-key piano with headroom.
+      const rootM = text.match(/^%%bd_root\s+([A-G][#b]?|\d+)((?:,+|'+)?)/m);
       if (rootM) {
         const r = rootM[1];
         if (/^\d+$/.test(r)) g.root = Math.max(0, Math.min(11, parseInt(r, 10)));
@@ -507,6 +514,14 @@
           const idx = NOTE_NAMES.indexOf(r.replace('b', '').replace('B', 'b'));
           if (idx >= 0) g.root = idx;
         }
+        const suffix = rootM[2] || '';
+        let octShift = 0;
+        if (suffix.length > 0) octShift = suffix[0] === ',' ? -suffix.length : suffix.length;
+        // Clamp to what fits within piano range minus 1 octave each end.
+        const baseMidi = 60 + g.root;
+        const octMin = Math.ceil((45 - baseMidi) / 12);
+        const octMax = Math.floor((84 - baseMidi) / 12);
+        g.rootOctave = Math.max(octMin, Math.min(octMax, octShift));
       }
       const ssM = text.match(/^%%bd_step_seconds\s+([\d.]+)/m);
       if (ssM) g.stepSeconds = Math.max(0.05, parseFloat(ssM[1]));
@@ -817,7 +832,7 @@
         if (r.isHorizontal) {
           notes.push({
             runIdx: i,
-            midi: pitchForY(r.y1, g.scale, g.root, 4),
+            midi: pitchForY(r.y1, g.scale, g.root, 4 + g.rootOctave),
             length: r.length
           });
         }
@@ -1278,12 +1293,21 @@
     // scale/root lines (or inserts them if absent).
     function currentGrammarScript() {
       let text = storedText || '';
+      // Preserve any rootOctave suffix (,,' or "'"×N) parsed from the current
+      // script — no stepper controls it yet, so we roundtrip via the script.
+      const parsedForOctave = parseGrammarFromScript(text);
+      const rootName    = NOTE_NAMES[getStepperValue('root')] || 'C';
+      const octSuffix   = parsedForOctave.rootOctave > 0
+        ? "'".repeat(parsedForOctave.rootOctave)
+        : parsedForOctave.rootOctave < 0
+          ? ",".repeat(-parsedForOctave.rootOctave)
+          : '';
       const setters = {
         iterations:        String(Math.round(getStepperValue('iterations'))),
         step_seconds:      getStepperValue('step_seconds').toFixed(2),
         vertical_time:     getStepperValue('vertical_time').toFixed(2),
         scale:             SCALE_NAMES[getStepperValue('scale')] || 'minor',
-        root:              NOTE_NAMES[getStepperValue('root')] || 'C',
+        root:              rootName + octSuffix,
         reverb_wet:        getStepperValue('reverb_wet').toFixed(2),
         reverb_decay:      getStepperValue('reverb_decay').toFixed(2),
         vibrato_frequency: getStepperValue('vibrato_frequency').toFixed(2),
@@ -1293,12 +1317,9 @@
         loop:              getStepperValue('loop') >= 0.5 ? 'true' : 'false',
         loop_gap:          String(Math.round(getStepperValue('loop_gap')))
       };
-      // Offsets (no stepper yet) — preserve whatever's currently in the
-      // stored script so Copy Grammar round-trips cleanly. If missing,
-      // insert the fallback defaults so the roundtripped script is complete.
-      const parsed = parseGrammarFromScript(text);
-      setters.offset2 = String(parsed.offset2);
-      setters.offset3 = String(parsed.offset3);
+      // Offsets (no stepper yet) — reuse the parse from the top.
+      setters.offset2 = String(parsedForOctave.offset2);
+      setters.offset3 = String(parsedForOctave.offset3);
       for (const [key, val] of Object.entries(setters)) {
         const re = new RegExp(`^%%bd_${key}\\s+.*$`, 'm');
         const line = `%%bd_${key} ${val}`;
