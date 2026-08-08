@@ -156,11 +156,11 @@
     .playback-row button:active:not(:disabled) { background: #243f3b; }
     .playback-row button:disabled              { opacity: 0.4; cursor: not-allowed; }
     /* v-check canary — RGB rotation (feedback_canary_rotation).
-       Currently RED; next = green. */
+       Currently GREEN; next = blue. */
     #play-pause-btn {
-      background: #FF0000 !important;
-      color: #ffffff !important;
-      border-color: #FF0000 !important;
+      background: #00CC00 !important;
+      color: #0a0a1a !important;
+      border-color: #00CC00 !important;
       font-weight: bold;
     }
 
@@ -854,10 +854,17 @@
         let beats;
         if (run.isHorizontal) {
           if (chordMode) {
-            const p1 = notes[noteK].midi;
-            const p2 = notes[Math.min(noteK + g.offset2, notes.length - 1)].midi;
-            const p3 = notes[Math.min(noteK + g.offset3, notes.length - 1)].midi;
-            body += '[' + midiToAbc(p1) + midiToAbc(p2) + midiToAbc(p3) + ']' + lenToken(run.length);
+            const p1raw = notes[noteK].midi;
+            const p2raw = notes[Math.min(noteK + g.offset2, notes.length - 1)].midi;
+            const p3raw = notes[Math.min(noteK + g.offset3, notes.length - 1)].midi;
+            // Octave-spread voicing (user 2026-08-08): p2 shifted down one
+            // octave, p3 shifted up one octave, p1 unchanged. Widens the
+            // chord span from ~octave to ~3 octaves for richer harmony.
+            // Fold back into piano range [21, 108] if the shift would push
+            // off the keyboard.
+            let p2 = p2raw - 12; if (p2 < 21)  p2 = p2raw;
+            let p3 = p3raw + 12; if (p3 > 108) p3 = p3raw;
+            body += '[' + midiToAbc(p1raw) + midiToAbc(p2) + midiToAbc(p3) + ']' + lenToken(run.length);
           } else {
             body += midiToAbc(notes[noteK].midi) + lenToken(run.length);
           }
