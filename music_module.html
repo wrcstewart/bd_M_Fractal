@@ -156,11 +156,11 @@
     .playback-row button:active:not(:disabled) { background: #243f3b; }
     .playback-row button:disabled              { opacity: 0.4; cursor: not-allowed; }
     /* v-check canary — RGB rotation (feedback_canary_rotation).
-       Currently BLUE; next = red. */
+       Currently RED; next = green. */
     #play-pause-btn {
-      background: #0088FF !important;
+      background: #FF0000 !important;
       color: #ffffff !important;
-      border-color: #0088FF !important;
+      border-color: #FF0000 !important;
       font-weight: bold;
     }
 
@@ -502,10 +502,11 @@
       }
       // ABC-style root: letter + optional accidental + optional octave
       // suffix (',' × N = down N octaves, "'" × N = up N octaves).
-      // Clamped so the effective tonic MIDI lands in [45, 84] — that
-      // keeps the reflection's ±octave range inside piano-minus-one-
-      // octave-each-end (MIDI [33, 96]), guaranteeing all derived notes
-      // fit on an 88-key piano with headroom.
+      // Clamped so the effective tonic MIDI + reflection's ±octave range
+      // fits within full piano (MIDI [21, 108] = A0..C8). Tonic itself
+      // must be in [33, 96] so the top/bottom of the walk lands on the
+      // outermost piano keys and no further. Loosened v-2026-08-08 from
+      // the earlier extra-safe clamp that was cutting C,, back to C,.
       const rootM = text.match(/^%%bd_root\s+([A-G][#b]?|\d+)((?:,+|'+)?)/m);
       if (rootM) {
         const r = rootM[1];
@@ -517,10 +518,10 @@
         const suffix = rootM[2] || '';
         let octShift = 0;
         if (suffix.length > 0) octShift = suffix[0] === ',' ? -suffix.length : suffix.length;
-        // Clamp to what fits within piano range minus 1 octave each end.
+        // Tonic MIDI in [33, 96] → notes in [21, 108] = full piano.
         const baseMidi = 60 + g.root;
-        const octMin = Math.ceil((45 - baseMidi) / 12);
-        const octMax = Math.floor((84 - baseMidi) / 12);
+        const octMin = Math.ceil((33 - baseMidi) / 12);
+        const octMax = Math.floor((96 - baseMidi) / 12);
         g.rootOctave = Math.max(octMin, Math.min(octMax, octShift));
       }
       const ssM = text.match(/^%%bd_step_seconds\s+([\d.]+)/m);
