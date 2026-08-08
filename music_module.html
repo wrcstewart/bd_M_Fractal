@@ -156,11 +156,11 @@
     .playback-row button:active:not(:disabled) { background: #243f3b; }
     .playback-row button:disabled              { opacity: 0.4; cursor: not-allowed; }
     /* v-check canary — RGB rotation (feedback_canary_rotation).
-       Currently RED; next = green. */
+       Currently GREEN; next = blue. */
     #play-pause-btn {
-      background: #FF0000 !important;
-      color: #ffffff !important;
-      border-color: #FF0000 !important;
+      background: #00CC00 !important;
+      color: #0a0a1a !important;
+      border-color: #00CC00 !important;
       font-weight: bold;
     }
 
@@ -328,26 +328,29 @@
     let lastBakedLabel  = '';
 
     // ── Scale tables (semitone offsets from root) ───────────────────────────
+    // Pentatonic here is MINOR pentatonic (C Eb F G Bb) — fewer dissonant
+    // intervals than the major pentatonic (which used to occupy this slot).
+    // User 2026-08-08: 'the minor has fewer dissonat intervals so use that
+    // instead'. Old 'pentatonic' name kept as an alias so scripts saved
+    // before this change still parse.
     const SCALES = {
-      minor:      [0, 2, 3, 5, 7, 8, 10],   // natural minor / Aeolian
-      major:      [0, 2, 4, 5, 7, 9, 11],
-      pentatonic: [0, 2, 4, 7, 9],
-      blues:      [0, 3, 5, 6, 7, 10]
+      minor:            [0, 2, 3, 5, 7, 8, 10],   // natural minor / Aeolian
+      major:            [0, 2, 4, 5, 7, 9, 11],
+      minor_pentatonic: [0, 3, 5, 7, 10],
+      blues:            [0, 3, 5, 6, 7, 10]
     };
+    const SCALE_ALIASES = { pentatonic: 'minor_pentatonic' };
     const SCALE_NAMES = Object.keys(SCALES);
     const NOTE_NAMES  = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
     // ABC key-signature strings for each scale (used in the K: header).
-    // Pentatonic here is major-pentatonic (C D E G A) — all naturals, needs
-    // K:maj so bare `e` and `a` don't get flattened by a K:min signature.
-    // Blues also uses K:maj because its "flat" notes (Eb, Bb) are already
-    // emitted with explicit sharps (^D, ^A) by midiToAbc, so no implicit
-    // flats are needed — and a K:min signature would spuriously flatten
-    // its F natural if we ever emitted bare `a` in a subsequent octave.
+    // Minor pentatonic uses K:min so its chromatic notes (Eb, Bb) land
+    // implicitly via the key signature — cleaner-reading ABC than K:maj
+    // + explicit accidentals would be.
     const SCALE_TO_ABC_KEY_SUFFIX = {
-      minor:      'min',
-      major:      'maj',
-      pentatonic: 'maj',
-      blues:      'maj'
+      minor:            'min',
+      major:            'maj',
+      minor_pentatonic: 'min',
+      blues:            'maj'
     };
 
     // ── Steppers ────────────────────────────────────────────────────────────
@@ -456,7 +459,7 @@
         },
         iterations: 3,
         angle:      90,
-        scale:      'pentatonic',
+        scale:      'minor_pentatonic',
         root:       0,
         stepSeconds:  0.2,
         verticalTime: 0.2,
@@ -484,7 +487,11 @@
       const angleM = text.match(/^%%bd_angle\s+([\d.]+)/m);
       if (angleM) g.angle = parseFloat(angleM[1]);
       const scaleM = text.match(/^%%bd_scale\s+(\w+)/m);
-      if (scaleM && SCALES[scaleM[1]]) g.scale = scaleM[1];
+      if (scaleM) {
+        const raw = scaleM[1];
+        const resolved = SCALES[raw] ? raw : SCALE_ALIASES[raw];
+        if (resolved) g.scale = resolved;
+      }
       const rootM = text.match(/^%%bd_root\s+([A-G][#b]?|\d+)/m);
       if (rootM) {
         const r = rootM[1];
