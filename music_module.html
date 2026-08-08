@@ -156,11 +156,11 @@
     .playback-row button:active:not(:disabled) { background: #243f3b; }
     .playback-row button:disabled              { opacity: 0.4; cursor: not-allowed; }
     /* v-check canary — RGB rotation (feedback_canary_rotation).
-       Currently BLUE; next = red. */
+       Currently RED; next = green. */
     #play-pause-btn {
-      background: #0088FF !important;
+      background: #FF0000 !important;
       color: #ffffff !important;
-      border-color: #0088FF !important;
+      border-color: #FF0000 !important;
       font-weight: bold;
     }
 
@@ -366,7 +366,7 @@
     //                  linear step (perceptual scaling for reverb decay /
     //                  vibrato frequency).
     const STEPPERS = [
-      { name: 'iterations',        min: 1,   max: 20,  step: 1,    fallback: 3,   regen: true },
+      { name: 'iterations',        min: 5,   max: 20,  step: 1,    fallback: 5,   regen: true },
       { name: 'step_seconds',      min: 0.1, max: 2.0, step: 0.1,  fallback: 0.2, regen: true },
       { name: 'vertical_time',     min: 0.0, max: 2.0, step: 0.1,  fallback: 0.2, regen: true },
       { name: 'scale',             min: 0,   max: SCALE_NAMES.length - 1, step: 1, fallback: 2,
@@ -457,7 +457,7 @@
           X: 'XFYFX+F+YFXFY-F-XFYFX',
           Y: 'YFXFY-F-XFYFX+F+YFXFY'
         },
-        iterations: 3,
+        iterations: 5,
         angle:      90,
         scale:      'minor_pentatonic',
         root:       0,
@@ -474,9 +474,10 @@
         // Chord mode: each melody note becomes a 3-note chord using the
         // notes further on in the sequence at offset2 and offset3
         // positions. Piece ends offset3 notes earlier than melody form
-        // so every chord is a complete triad. Default 5, 10.
-        offset2:          5,
-        offset3:          10
+        // so every chord is a complete triad. Larger offsets = more
+        // decoupled voices = higher overall pitch range.
+        offset2:          30,
+        offset3:          60
       };
       const axiomM = text.match(/^%%bd_axiom\s+(\S+)/m);
       if (axiomM) g.axiom = axiomM[1];
@@ -489,7 +490,7 @@
       }
       if (Object.keys(foundRules).length) g.rules = foundRules;
       const iterM = text.match(/^%%bd_iterations\s+(\d+)/m);
-      if (iterM) g.iterations = Math.max(1, Math.min(20, parseInt(iterM[1], 10)));
+      if (iterM) g.iterations = Math.max(5, Math.min(20, parseInt(iterM[1], 10)));
       const angleM = text.match(/^%%bd_angle\s+([\d.]+)/m);
       if (angleM) g.angle = parseFloat(angleM[1]);
       const scaleM = text.match(/^%%bd_scale\s+(\w+)/m);
