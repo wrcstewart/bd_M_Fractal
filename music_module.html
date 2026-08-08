@@ -156,11 +156,11 @@
     .playback-row button:active:not(:disabled) { background: #243f3b; }
     .playback-row button:disabled              { opacity: 0.4; cursor: not-allowed; }
     /* v-check canary — RGB rotation (feedback_canary_rotation).
-       Currently GREEN; next = blue. */
+       Currently BLUE; next = red. */
     #play-pause-btn {
-      background: #00CC00 !important;
-      color: #0a0a1a !important;
-      border-color: #00CC00 !important;
+      background: #0088FF !important;
+      color: #ffffff !important;
+      border-color: #0088FF !important;
       font-weight: bold;
     }
 
@@ -470,7 +470,13 @@
         chorusWet:        0.2,
         chorusDepth:      0.3,
         loop:             false,
-        loopGap:          6
+        loopGap:          6,
+        // Chord mode: each melody note becomes a 3-note chord using the
+        // notes further on in the sequence at offset2 and offset3
+        // positions. Piece ends offset3 notes earlier than melody form
+        // so every chord is a complete triad. Default 5, 10.
+        offset2:          5,
+        offset3:          10
       };
       const axiomM = text.match(/^%%bd_axiom\s+(\S+)/m);
       if (axiomM) g.axiom = axiomM[1];
@@ -523,6 +529,10 @@
       if (lpM) g.loop = /^(true|on|1)$/i.test(lpM[1]);
       const lgM = text.match(/^%%bd_loop_gap\s+([\d.]+)/m);
       if (lgM) g.loopGap = parseFloat(lgM[1]);
+      const o2M = text.match(/^%%bd_offset2\s+(-?\d+)/m);
+      if (o2M) g.offset2 = Math.max(0, parseInt(o2M[1], 10));
+      const o3M = text.match(/^%%bd_offset3\s+(-?\d+)/m);
+      if (o3M) g.offset3 = Math.max(0, parseInt(o3M[1], 10));
       return g;
     }
 
@@ -791,18 +801,53 @@
         if (Number.isInteger(len)) return String(len);
         return len.toFixed(2);   // fractional — abcjs accepts
       }
+      // Chord mode (user 2026-08-08): each horizontal run becomes a 3-note
+      // chord using the notes further on in the SEQUENCE OF NOTES at
+      // offset2 and offset3 positions. Rests interleave as before —
+      // offset counting operates on notes only, not on all runs. Piece
+      // ends at the last note index k where k + offset3 still exists,
+      // so every chord is a complete triad (piece is offset3 notes
+      // shorter than plain melody form). Disabled if both offsets are 0.
+      const chordMode = g.offset2 > 0 || g.offset3 > 0;
+      // Build note-list: horizontal runs only, with their pitches computed.
+      const notes = [];       // { runIdx, midi, length }
+      for (let i = 0; i < runs.length; i++) {
+        const r = runs[i];
+        if (r.isHorizontal) {
+          notes.push({
+            runIdx: i,
+            midi: pitchForY(r.y1, g.scale, g.root, 4),
+            length: r.length
+          });
+        }
+      }
+      // Last valid note index for chord mode (need k+offset3 to exist).
+      const maxOff = Math.max(g.offset2, g.offset3);
+      const lastNoteIdx = chordMode ? (notes.length - 1 - maxOff) : (notes.length - 1);
+      const lastRunIdx  = lastNoteIdx >= 0 ? notes[lastNoteIdx].runIdx : -1;
+
       let body = '';
       let barAccum = 0;
       const barLength = 4;
       let barCount = 0;
-      for (const run of runs) {
+      let noteK = 0;    // position within note-list for the current horizontal run
+      for (let i = 0; i < runs.length; i++) {
+        if (lastRunIdx >= 0 && i > lastRunIdx) break;
+        const run = runs[i];
         let beats;
         if (run.isHorizontal) {
-          const midi = pitchForY(run.y1, g.scale, g.root, 4);
-          body += midiToAbc(midi) + lenToken(run.length);
+          if (chordMode) {
+            const p1 = notes[noteK].midi;
+            const p2 = notes[Math.min(noteK + g.offset2, notes.length - 1)].midi;
+            const p3 = notes[Math.min(noteK + g.offset3, notes.length - 1)].midi;
+            body += '[' + midiToAbc(p1) + midiToAbc(p2) + midiToAbc(p3) + ']' + lenToken(run.length);
+          } else {
+            body += midiToAbc(notes[noteK].midi) + lenToken(run.length);
+          }
           beats = run.length;
+          noteK++;
         } else {
-          if (g.verticalTime <= 0) continue;   // silent transition
+          if (g.verticalTime <= 0) continue;
           const restBeats = g.verticalTime * run.length;
           body += 'z' + lenToken(restBeats);
           beats = restBeats;
@@ -1247,6 +1292,12 @@
         loop:              getStepperValue('loop') >= 0.5 ? 'true' : 'false',
         loop_gap:          String(Math.round(getStepperValue('loop_gap')))
       };
+      // Offsets (no stepper yet) — preserve whatever's currently in the
+      // stored script so Copy Grammar round-trips cleanly. If missing,
+      // insert the fallback defaults so the roundtripped script is complete.
+      const parsed = parseGrammarFromScript(text);
+      setters.offset2 = String(parsed.offset2);
+      setters.offset3 = String(parsed.offset3);
       for (const [key, val] of Object.entries(setters)) {
         const re = new RegExp(`^%%bd_${key}\\s+.*$`, 'm');
         const line = `%%bd_${key} ${val}`;
