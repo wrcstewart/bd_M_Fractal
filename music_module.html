@@ -131,12 +131,24 @@
       color: #6a6a60;
     }
 
+    /* 2026-08-08 — Play/Stop moved to the right of #abc-pane via
+       .abc-and-play row. .playback-row itself is now a vertical stack
+       inside that row (buttons above/below each other in the gutter). */
+    .abc-and-play {
+      flex: 0 0 auto;
+      display: flex;
+      flex-direction: row;
+      gap: 10px;
+      align-items: center;
+      justify-content: center;
+    }
     .playback-row {
       flex: 0 0 auto;
       display: flex;
+      flex-direction: column;
       gap: 8px;
       justify-content: center;
-      align-items: center;
+      align-items: stretch;
     }
     .playback-row button {
       background: #0f0f18;
@@ -156,12 +168,11 @@
     .playback-row button:active:not(:disabled) { background: #243f3b; }
     .playback-row button:disabled              { opacity: 0.4; cursor: not-allowed; }
     /* v-check canary — RGB rotation (feedback_canary_rotation).
-       Currently BLUE (min_pentatonic rename + steppers 2-col, 2026-08-08);
-       next = red. */
+       Currently RED (Play/Stop next to abc-pane, 2026-08-08); next = green. */
     #play-pause-btn {
-      background: #2A6DFF !important;
+      background: #d03030 !important;
       color: #ffffff !important;
-      border-color: #2A6DFF !important;
+      border-color: #d03030 !important;
       font-weight: bold;
     }
 
@@ -279,10 +290,12 @@
 
     <section class="main-area">
       <div id="status">Loading samples…</div>
-      <div id="abc-pane" title="Derived ABC (read-only; select + Cmd-C to copy, or use 'Copy for ABC Player')"></div>
-      <div class="playback-row">
-        <button id="play-pause-btn" type="button" disabled>Play</button>
-        <button id="stop-btn"       type="button" disabled>Stop</button>
+      <div class="abc-and-play">
+        <div id="abc-pane" title="Derived ABC (read-only; select + Cmd-C to copy, or use 'Copy for ABC Player')"></div>
+        <div class="playback-row">
+          <button id="play-pause-btn" type="button" disabled>Play</button>
+          <button id="stop-btn"       type="button" disabled>Stop</button>
+        </div>
       </div>
     </section>
 
