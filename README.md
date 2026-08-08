@@ -42,7 +42,7 @@ Sibling modules in the same family: [bd_V_Kolam](https://github.com/wrcstewart/b
 %%bd_rule Y: YFXFY-F-XFYFX+F+YFXFY
 %%bd_iterations 5
 %%bd_angle 90
-%%bd_scale minor_pentatonic
+%%bd_scale min_pentatonic
 %%bd_root C,
 %%bd_step_seconds 0.2
 %%bd_vertical_time 0.2
@@ -87,7 +87,7 @@ The script is a list of `%%bd_<name> <value>` lines. Every directive is optional
 
 | Directive | Default | Notes |
 |---|---|---|
-| `%%bd_scale <name>` | `minor_pentatonic` | One of: `minor`, `major`, `minor_pentatonic`, `blues`. Alias `pentatonic` → `minor_pentatonic` (legacy). |
+| `%%bd_scale <name>` | `min_pentatonic` | One of: `minor`, `major`, `min_pentatonic`, `blues`. Aliases: `pentatonic` and `minor_pentatonic` → `min_pentatonic` (legacy). |
 | `%%bd_root <note>` | `C,` | ABC-notation pitch: letter (A–G), optional `#` or `b`, optional `,`/`'` octave suffix (`,` = one octave down, `,,` = two, `'` = one up, etc.). Clamped so all derived notes fit within full piano range MIDI [21, 108]. |
 | `%%bd_step_seconds <sec>` | `0.2` | Real-time duration of one turtle F step (and thus of one quarter-note in the derived ABC). Range 0.1–2.0. |
 | `%%bd_vertical_time <mult>` | `0.2` | Multiplier applied to a vertical run's length to determine rest duration. `0` = silent transition (no time cost), `1` = full rest matching vertical run length. Range 0.0–2.0. |
