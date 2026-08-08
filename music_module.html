@@ -116,7 +116,7 @@
       border-radius: 6px;
       padding: 8px 10px;
       font-family: 'Courier New', Courier, monospace;
-      font-size: 0.9rem;                 /* +20 % from 0.75 for readability */
+      font-size: 1.08rem;                /* +20 % from 0.9 (was 0.75 originally) */
       color: #cfcfc4;
       line-height: 1.4;
       overflow: auto;
@@ -156,11 +156,12 @@
     .playback-row button:active:not(:disabled) { background: #243f3b; }
     .playback-row button:disabled              { opacity: 0.4; cursor: not-allowed; }
     /* v-check canary — Play button colour bumped each iteration so cache
-       staleness is visible at a glance. Currently ORANGE. */
+       staleness is visible at a glance. Currently YELLOW; next change =
+       red per the RGB rotation rule (feedback_canary_rotation). */
     #play-pause-btn {
-      background: #FF8800 !important;
+      background: #FFFF00 !important;
       color: #0a0a1a !important;
-      border-color: #FF8800 !important;
+      border-color: #FFFF00 !important;
       font-weight: bold;
     }
 
@@ -198,7 +199,7 @@
         align-self: stretch;
       }
       .control-row { flex: 1 1 30%; min-width: 90px; max-width: 200px; }
-      #abc-pane { width: 140px; font-size: 0.84rem; padding: 6px 8px; }
+      #abc-pane { width: 140px; font-size: 1.01rem; padding: 6px 8px; }
     }
 
     .control-row {
