@@ -180,12 +180,12 @@
     .playback-row button:active:not(:disabled) { background: #243f3b; }
     .playback-row button:disabled              { opacity: 0.4; cursor: not-allowed; }
     /* v-check canary — RGB rotation (feedback_canary_rotation).
-       Currently RED (abc-pane cleared past extend panel on mobile,
-       2026-08-09); next = green. */
+       Currently GREEN (breakpoint 500→1024 for iPad, 2026-08-09);
+       next = blue. */
     #play-pause-btn {
-      background: #d03030 !important;
-      color: #ffffff !important;
-      border-color: #d03030 !important;
+      background: #00CC00 !important;
+      color: #0a0a1a !important;
+      border-color: #00CC00 !important;
       font-weight: bold;
     }
 
@@ -205,7 +205,11 @@
       max-height: 100%;
     }
 
-    @media (max-width: 500px) {
+    /* 2026-08-09 — breakpoint raised 500 → 1024 so iPad (portrait 768–
+       1024, iPad Mini landscape 1024) gets the stacked/wrapped layout
+       instead of the 3-column desktop one that was hiding Play/Stop
+       behind the right stepper column. */
+    @media (max-width: 1024px) {
       .module-layout { flex-direction: column; }
       .lh-actions {
         flex: 0 0 auto;
