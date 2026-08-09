@@ -180,12 +180,12 @@
     .playback-row button:active:not(:disabled) { background: #243f3b; }
     .playback-row button:disabled              { opacity: 0.4; cursor: not-allowed; }
     /* v-check canary — RGB rotation (feedback_canary_rotation).
-       Currently GREEN (breakpoint 500→1024 for iPad, 2026-08-09);
-       next = blue. */
+       Currently BLUE (bake robustness: pre-fetch + inline decode +
+       limiter + WAV normalisation, 2026-08-09); next = red. */
     #play-pause-btn {
-      background: #00CC00 !important;
-      color: #0a0a1a !important;
-      border-color: #00CC00 !important;
+      background: #2A6DFF !important;
+      color: #ffffff !important;
+      border-color: #2A6DFF !important;
       font-weight: bold;
     }
 
@@ -1450,8 +1450,39 @@
       }
     });
 
+    // Bake pipeline (2026-08-09):
+    //  - Samples fetched once as ArrayBuffers, cached; decode happens
+    //    INSIDE the offline context per bake so AudioBuffers are native
+    //    to that context (no cross-AudioContext playback).
+    //  - Tone.Limiter tail caps summed chord amplitudes.
+    //  - audioBufferToWav also normalises if peak > 1.0 (belt-and-braces).
+    //  - KNOWN CAVEAT: Safari's Private Browsing mode breaks
+    //    OfflineAudioContext + Tone effects (Reverb / Chorus produce
+    //    ~1000× over-amplitude — bake sounds like noise). No known code
+    //    workaround; users must bake in a REGULAR Safari tab. Chrome /
+    //    Firefox private tabs are fine.
+    const SAMPLE_URLS = {
+      'F#2': 'bass_recorder_Fs2.mp3',
+      'C3':  'bass_recorder_C3.mp3',
+      'G#3': 'bass_recorder_Gs3.mp3',
+      'E4':  'bass_recorder_E4.mp3'
+    };
+    let cachedSampleArrayBuffers = null;
+    async function getSampleArrayBuffers() {
+      if (cachedSampleArrayBuffers) return cachedSampleArrayBuffers;
+      const entries = await Promise.all(
+        Object.entries(SAMPLE_URLS).map(async ([note, path]) => {
+          const res = await fetch('./bass-recorder/' + path);
+          if (!res.ok) throw new Error(`fetch ${path}: HTTP ${res.status}`);
+          const arr = await res.arrayBuffer();
+          return [note, arr];
+        })
+      );
+      cachedSampleArrayBuffers = Object.fromEntries(entries);
+      return cachedSampleArrayBuffers;
+    }
+
     async function renderOfflineToBuffer() {
-      // Use current stepper values so the bake reflects live tweaks.
       const rWet   = getStepperValue('reverb_wet');
       const rDecay = getStepperValue('reverb_decay');
       const vFreq  = getStepperValue('vibrato_frequency');
@@ -1459,24 +1490,26 @@
       const cWet   = getStepperValue('chorus_wet');
       const cDepth = getStepperValue('chorus_depth');
       const durationSec = endTimeSecs + Math.max(rDecay, 0.5) + 0.5;
+      const sampleArrayBuffers = await getSampleArrayBuffers();
+      const liveRate = Tone.getContext().sampleRate;
+
       const toneBuf = await Tone.Offline(async () => {
-        const rev = new Tone.Reverb({ decay: Math.max(0.1, rDecay), wet: rWet }).toDestination();
+        const offlineRaw = Tone.getContext().rawContext;
+        const decodedInline = {};
+        for (const [note, arr] of Object.entries(sampleArrayBuffers)) {
+          const copy = arr.slice(0);
+          decodedInline[note] = await offlineRaw.decodeAudioData(copy);
+        }
+        const lim = new Tone.Limiter(-1).toDestination();
+        const rev = new Tone.Reverb({ decay: Math.max(0.1, rDecay), wet: rWet }).connect(lim);
         await rev.ready;
         const vib = new Tone.Vibrato({ frequency: vFreq, depth: vDepth, type: 'sine' }).connect(rev);
         const cho = new Tone.Chorus({ frequency: 1.5, delayTime: 3.5, depth: cDepth, wet: cWet }).connect(vib);
         cho.start();
-        const smp = new Tone.Sampler({
-          urls: {
-            'F#2': 'bass_recorder_Fs2.mp3',
-            'C3':  'bass_recorder_C3.mp3',
-            'G#3': 'bass_recorder_Gs3.mp3',
-            'E4':  'bass_recorder_E4.mp3'
-          },
-          baseUrl: './bass-recorder/'
-        }).connect(cho);
+        const smp = new Tone.Sampler({ urls: decodedInline }).connect(cho);
         await Tone.loaded();
         for (const ev of noteEvents) smp.triggerAttackRelease(ev.note, ev.duration, ev.time);
-      }, durationSec);
+      }, durationSec, 2, liveRate);
       return toneBuf.get();
     }
     function audioBufferToWav(buffer) {
@@ -1489,9 +1522,19 @@
       view.setUint32(24,sr,true); view.setUint32(28,br,true); view.setUint16(32,ba,true);
       view.setUint16(34,16,true); w(36,'data'); view.setUint32(40,ds,true);
       const ch = []; for (let c=0;c<numCh;c++) ch.push(buffer.getChannelData(c));
+      // Normalise if any sample exceeds ±1 (Limiter backstop).
+      let peak = 0;
+      for (let c = 0; c < numCh; c++) {
+        const data = ch[c];
+        for (let i = 0; i < numSamp; i++) {
+          const a = Math.abs(data[i]);
+          if (a > peak) peak = a;
+        }
+      }
+      const scale = peak > 1.0 ? (0.98 / peak) : 1.0;
       let offset = 44;
       for (let i=0;i<numSamp;i++) for (let c=0;c<numCh;c++) {
-        let s = Math.max(-1, Math.min(1, ch[c][i]));
+        let s = Math.max(-1, Math.min(1, ch[c][i] * scale));
         s = s < 0 ? s*0x8000 : s*0x7FFF;
         view.setInt16(offset, s, true); offset += 2;
       }
