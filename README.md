@@ -295,6 +295,7 @@ The module is designed to be dropped into any host that speaks its `postMessage`
 | `bd_script_update` | `{ script }` | Replace current script (fresh grammar / re-parse / re-derive). |
 | `bd_script_request` | — | Ask the module to send its current script back. |
 | `BD_STOP` | — | Stop playback. |
+| `BD_INFO_DIALOG_RESULT` | `{ action, dontShowAgain }` | Host's reply to a Bake/Save-wav info-dialog request. `action` is `'continue'` or `'cancel'`. Module falls back to `window.confirm()` if host doesn't respond within 300 ms. |
 
 ### Upstream (module → host)
 
@@ -304,6 +305,7 @@ The module is designed to be dropped into any host that speaks its `postMessage`
 | `bd_script_response` | `{ script }` | Reply to `bd_script_request`, includes current stepper values baked back into the script. |
 | `BD_MEDIA_BLOB` | `{ label, audioData: ArrayBuffer, mime, sizeBytes }` | Bake-to-WAV output. Host attaches to a media player. |
 | `BD_MODULE_COPY_LINK_REQUEST` | `{ text }` | Ask host to build a share-link URL wrapping the current script. |
+| `BD_INFO_DIALOG_REQUEST` | `{ actionLabel }` | Ask host to show the Bake/Save-wav info dialog. Host renders in its own DOM (module iframe can't overlay host chrome or fit iPhone viewports). Host replies with `BD_INFO_DIALOG_RESULT`. |
 | `BD_ERROR` | `{ message }` | Non-fatal error to surface in host UI. |
 
 ### URL params (standalone only)
@@ -312,6 +314,22 @@ The module is designed to be dropped into any host that speaks its `postMessage`
 |---|---|---|
 | `?data=<base64>` | JSON `{ script, node_url, source_text, title, name }` | Full arrival envelope, used when linking in from a Butterfly-Dreaming platform node. |
 | `?script=<base64>` | Raw script text | Simpler share-link. |
+
+---
+
+## Known limitations
+
+### Safari Private Browsing breaks Bake
+
+**Symptom:** In Safari (macOS or iOS) Private Browsing tabs, the Bake / Save wav output sounds like pure noise instead of music. Live playback via the Play button is unaffected.
+
+**Cause:** Safari 17+ deliberately injects small randomised noise into `AudioBuffer.getChannelData`, `AudioBuffer.copyFromChannel`, `AudioWorkletNode`, and `AnalyserNode.getFloatFrequencyData` when Private Browsing is on, as an anti-audio-fingerprinting measure (see [Fingerprint.com's writeup](https://fingerprint.com/blog/bypassing-safari-17-audio-fingerprinting-protection/)). The noise magnitude on `getChannelData` is only 0.001 in isolation, but Tone.Reverb's internal impulse-response generation reads noise-injected data and amplifies it ~1000× through convolution. Live playback isn't affected because it never routes through `getChannelData` — audio flows straight from the graph to the hardware.
+
+**Workaround:** none in code. **Use a regular (non-private) Safari tab, or Chrome / Firefox** (their private tabs are unaffected). The Bake button surfaces an info dialog on first tap warning about this.
+
+**Attempted fixes that didn't help** (documented so external forkers don't repeat them): pre-decoding samples via the live context and passing cross-context `AudioBuffer`s to the offline sampler; decoding inside the offline context; wrapping the chain in `Tone.Limiter(-1)`; explicit stereo + sample-rate on `Tone.Offline`. All still produced ~150× over-range output in Safari Private. Fingerprint.com's bypass (repeated getChannelData reads averaged out) is only tractable for known fingerprinting probes, not full music renders.
+
+**Ideas not yet tried**: pre-generate Reverb's impulse response in the live context (which works in Private mode) and feed it to a manually-constructed offline `ConvolverNode`; replace Reverb/Chorus with hand-rolled implementations; use `MediaRecorder` on the live graph — real-time capture (`~30 s piece = 30 s wait`), output WebM/Opus needs a decode + WAV re-pack.
 
 ---
 
@@ -327,9 +345,9 @@ Each shares the same `%%bd_…` directive convention, the same postMessage proto
 
 ### Two-copy convention
 
-Each module lives in two places once wired into the parent [ButterflyDreaming graph viewer](https://github.com/wrcstewart/butterflydreaming-graphviewer1): once as the standalone here, once embedded in the viewer's repo. When both copies exist, they must be manually kept in sync — small acceptable drift (e.g. the standalone-only `Save wav` / `Save midi` / `Download` buttons in bd_M_ABC) is documented in the file-top comment of the divergent copy.
+Each module lives in two places once wired into the parent [ButterflyDreaming graph viewer](https://github.com/wrcstewart/butterflydreaming-graphviewer1): once as the standalone here, once embedded in the viewer's repo. When both copies exist, they must be manually kept in sync — small acceptable drift (e.g. the embedded copy hides `#status`; standalone shows it) is documented in the file-top comment of the divergent copy.
 
-`bd_M_Fractal`'s embedded BD copy is **not yet done** at time of writing.
+`bd_M_Fractal`'s embedded BD copy is wired in as of 2026-08-08 (BD repo commit `ff8a11f`).
 
 ---
 
