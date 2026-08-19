@@ -92,38 +92,48 @@
     #ev-media-btn:hover  { background: #23233a; color: #fff; }
     #ev-media-btn:active { background: #2f2f4a; }
 
-    /* Invitation panel (2026-07-11) — floats above #bd-bar. Shown only when
-       Edit is toggled on; hidden in basic mode. Contains an explainer
-       sentence and two stacked call-to-action buttons (Jump In on top,
-       Copy Link below). Right-aligned on landscape, spans further left on
-       narrow / portrait so the text has room to breathe. */
+    /* Invitation panel (2026-07-11). 2026-08-19 — docked into the module's
+       #bd-ext-slot by positionSlots(), matching bd_M_ABC; the values here are
+       the fallback used when the slot can't be read. B&W, white frame, always
+       shown (the basic mode that used to hide it is retired). */
     #bd-invite-panel {
       position: fixed;
-      bottom: 34px;                  /* was 44 (36 px bar + 8 px gap);
-                                        dropped 10 px 2026-07-11 so panel top
-                                        clears the side-panel action row. */
+      bottom: 40px;
       right: 8px;
-      max-width: 208px;              /* -20 % from 260 px (2026-07-11);
-                                        panel shrunk after Copy Link removed */
-      padding: 10px 12px;
-      background: rgba(10, 10, 26, 0.95);
-      border: 1px solid #333;
-      border-radius: 6px;
+      width: 200px;
+      padding: 5px 6px;
+      background: #000;
+      border: 1px solid #fff;
+      border-radius: 4px;
       color: #ccc;
       font-family: sans-serif;
-      font-size: 12px;
-      line-height: 1.35;
+      font-size: 11px;
+      line-height: 1.25;
       z-index: 1001;
-      display: none;
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.6);
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      gap: 5px;
+      overflow: hidden;
     }
 
-    body:not(.ev-basic) #bd-invite-panel { display: block; }
-
+    /* Detailed invite — sits at the BOTTOM of the panel. */
     #bd-invite-text {
-      margin: 0 0 10px 0;
-      color: #ccc;
+      margin: 0;
+      color: #bbb;
       text-align: center;
+      font-size: 10px;
+    }
+
+    /* Title line — FIRST line of the panel and the ONE serif element on the
+       page (bd_M_ABC convention), in dark gold. */
+    #bd-invite-target {
+      margin: 0 0 2px 0;
+      text-align: center;
+      color: #d4a017;
+      font-family: 'Georgia', 'Times New Roman', serif;
+      font-size: 14px;
+      font-weight: bold;
     }
 
     #bd-actions {
@@ -293,10 +303,9 @@
       border-color: #FFD700;
     }
 
-    /* Basic mode (default on load): side panel hidden, canvas full width.
-       Edit button toggles body.ev-editing to reveal the panel. Side panel
-       stays laid out via existing flex; no width tweaks needed. */
-    body.ev-basic .side-panel { display: none; }
+    /* 2026-08-19 — the simplified non-edit ("basic") mode is RETIRED. The
+       side panel is always present, so there is no body.ev-basic rule and no
+       Edit toggle. bd_M_ABC still has both; this module is edit-only. */
 
     .layout {
       flex: 1;
@@ -388,38 +397,41 @@
     #script-input:focus { border-color: #4a9b8e; border-bottom-color: #5a4020; }
 
     /* Action row: Copy Link / Copy / ↓ / ↑ on one line; flex-wrap for narrow. */
-    .action-bar {
+    /* 2026-08-19 — docked ↓↑ arrows, lifted out of the side-panel action bar
+       so positionSlots() can overlay them onto the module's #bd-arrows-slot
+       grid cell (mirrors BD's dock mechanism). The fixed top-right position
+       below is the fallback if the slot can't be read. White-frame/black-bg to
+       match the module's grid buttons. */
+    #arrow-dock {
+      position: fixed;
+      top: 52px;
+      right: 8px;
       display: flex;
-      flex-wrap: wrap;
-      gap: 6px;
-      flex: 0 0 auto;
+      flex-direction: row;
+      gap: 4px;
+      z-index: 1001;
     }
-
-    .action-bar button {
-      background: #0f0f18;
-      border: 1px solid #4a9b8e;
-      color: #4a9b8e;
-      cursor: pointer;
-      font-family: 'Courier New', Courier, monospace;
-      font-size: 0.85rem;
-      letter-spacing: 0.03em;
-      padding: 6px 10px;
+    #arrow-dock button {
+      flex: 1 1 0;
+      min-width: 40px;
+      background: #000;
+      border: 1px solid #fff;
+      color: #fff;
+      font-size: 1.1rem;
+      line-height: 1;
       border-radius: 3px;
+      cursor: pointer;
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
       user-select: none;
       -webkit-user-select: none;
-      -webkit-touch-callout: none;
-      -webkit-tap-highlight-color: transparent;
-      touch-action: manipulation;
-      flex: 1 1 auto;
     }
-    .action-bar button.arrow {
-      font-size: 1rem;
-      padding: 6px 12px;
-      flex: 0 0 44px;
-    }
-    .action-bar button:hover  { background: #1a2a28; }
-    .action-bar button:active { background: #243f3b; }
-    .action-bar button:disabled { opacity: 0.4; cursor: not-allowed; }
+    #arrow-dock button:hover    { background: #1a1a1a; }
+    #arrow-dock button:active   { background: #243f3b; }
+    #arrow-dock button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    /* .action-bar rules removed 2026-08-19 with the bar itself (arrows
+       moved to #arrow-dock, Copy Link to #ev-actions, Copy retired). */
 
     /* 2026-07-17 — the side-panel Copy Link is the primary sharing
        action (produces the URL a user would paste into a message /
@@ -526,12 +538,12 @@
     }
   </style>
 </head>
-<body class="ev-basic">
+<body>
 
   <div class="layout">
     <div class="module-column">
       <iframe id="module-frame"
-              src="music_module.html"
+              src="music_module.html?v=2"
               title="ButterflyDreaming Music Module"></iframe>
     </div>
 
@@ -543,22 +555,29 @@
            reintroduced at the BD-receive side rather than the standalone. -->
       <textarea id="script-input" spellcheck="false"
                 title="Edit the L-system grammar / params directly. Steppers on the module drive stepper-editable params (iterations, step_seconds, vertical_time, scale, root)."></textarea>
-      <div class="action-bar">
-        <button id="copy-link-btn" title="Copy a shareable URL that reproduces this script">Copy Link</button>
-        <button id="copy-btn"      title="Copy the script to the clipboard">Copy</button>
-        <button id="send-btn"      class="arrow" title="Send script → module">↓</button>
-        <button id="receive-btn"   class="arrow" title="Request module state → script">↑</button>
-      </div>
+      <!-- 2026-08-19 — the action bar is gone: ↓↑ moved to #arrow-dock (docked
+           onto the module's grid), Copy Link moved to the bottom bar next to
+           the source context, and Copy retired because the module's own
+           Copy Script does that job. Same shape as bd_M_ABC. -->
       <div id="stepper-column" class="stepper-column"><!-- steppers injected --></div>
       <div id="status">Loading module…</div>
     </aside>
   </div>
 
+  <!-- 2026-08-19 — ↓↑ script-exchange arrows, lifted out of the side panel so
+       positionSlots() can overlay them onto the module's #bd-arrows-slot grid
+       cell. Falls back to the top-right corner if the slot can't be read. -->
+  <div id="arrow-dock">
+    <button id="send-btn"    class="arrow" title="Send script → module">↓</button>
+    <button id="receive-btn" class="arrow" title="Request module state → script">↑</button>
+  </div>
+
   <div id="bd-bar">
     <div id="ev-actions">
-      <button id="ev-edit-btn"   type="button" title="Show or hide the script editor">Edit</button>
-      <!-- ◀/▶ Prev/Next removed 2026-07-17: relied on BD's /api/module-sibling
+      <!-- Edit button removed 2026-08-19 with the basic mode it toggled.
+           ◀/▶ Prev/Next removed 2026-07-17: relied on BD's /api/module-sibling
            endpoint, not available in the standalone GitHub Pages deployment. -->
+      <button id="copy-link-btn" type="button" title="Copy a shareable URL that reproduces this script">Copy Link</button>
     </div>
     <span id="bd-source-context"></span>
     <!-- 2026-07-18 — inline audio player, right end of #bd-bar. Hardcoded
@@ -573,18 +592,17 @@
     </div>
   </div>
 
-  <!-- Invitation panel: shown only when Edit is toggled on (body loses the
-       ev-basic class). Structure reads as a sentence — the two verb-buttons
-       above share the italic "Butterfly Dreaming" as their object. Also
-       resolves the naming conflict with the side-panel's Copy Link (which
-       copies the standalone-EV URL, not the BD-return URL). -->
+  <!-- Collaborate invite panel. 2026-08-19 — docked into the module's
+       #bd-ext-slot by positionSlots(); always shown (the basic mode that hid
+       it is retired). Title first (the one serif element), then the two
+       action buttons, then the detailed invite — bd_M_ABC's order. -->
   <aside id="bd-invite-panel">
-    <p id="bd-invite-text">You can use our Platform to explore, collaborate and save</p>
+    <p id="bd-invite-target">Butterfly Dreaming</p>
     <div id="bd-actions">
       <button id="bd-enter-btn"     type="button" title="Return to ButterflyDreaming carrying the current script">Jump to</button>
       <button id="bd-copy-link-btn" type="button" title="Copy a BD-return link to the clipboard">Copy Link to</button>
     </div>
-    <p id="bd-invite-target">Butterfly Dreaming</p>
+    <p id="bd-invite-text">You can use our Platform to explore, collaborate and save</p>
   </aside>
 
   <!-- 2026-07-15 — Copy-Link confirm dialog. Sliders write to the script
@@ -615,7 +633,6 @@
     const textarea    = document.getElementById('script-input');
     const sendBtn     = document.getElementById('send-btn');
     const receiveBtn  = document.getElementById('receive-btn');
-    const copyBtn     = document.getElementById('copy-btn');
     const copyLinkBtn = document.getElementById('copy-link-btn');
     const statusEl    = document.getElementById('status');
     const moduleFrame = document.getElementById('module-frame');
@@ -1039,16 +1056,57 @@
     // Freeze button dropped for the music module — no drift/animation to
     // freeze. ◀ Prev / Next ▶ retired earlier (needed BD's
     // /api/module-sibling endpoint, not present on GitHub Pages).
-    const evEditBtn = document.getElementById('ev-edit-btn');
+    // Edit button + basic mode retired 2026-08-19 — this harness is edit-only,
+    // so the side panel is always present and there is nothing to toggle.
 
-    // Edit — toggle the side panel (script textarea) via a body class.
-    // Basic mode = ev-basic present = side panel hidden.
-    if (evEditBtn) {
-      evEditBtn.addEventListener('click', () => {
-        const nowEditing = document.body.classList.toggle('ev-basic') === false;
-        evEditBtn.classList.toggle('active', nowEditing);
-      });
+    // ── Dock the ↓↑ arrows / invite onto the module's grid slots ───────────
+    // The music module reserves two empty cells, #bd-arrows-slot (top of the
+    // right third) and #bd-ext-slot (bottom-left). We overlay our own chrome
+    // onto them — same-origin single iframe, so we read the slot rect directly
+    // and add the iframe's page offset. If a slot can't be read (module still
+    // loading, or an older build) the element falls back to its CSS position —
+    // nothing breaks. Mirrors BD's positionExtendPanel, and bd_M_ABC's copy.
+    const arrowDock   = document.getElementById('arrow-dock');
+    const invitePanel = document.getElementById('bd-invite-panel');
+
+    // growable=true → set min-height (not height) so the element fills the slot
+    // but can grow taller than it if its content needs the room (no clipping).
+    function dockOnto(el, slotId, growable) {
+      try {
+        const doc  = moduleFrame.contentDocument;
+        const slot = doc && doc.getElementById(slotId);
+        if (slot) {
+          const fr = moduleFrame.getBoundingClientRect();
+          const sr = slot.getBoundingClientRect();
+          if (sr.width >= 8 && sr.height >= 8) {
+            el.style.position = 'fixed';
+            el.style.top    = (fr.top  + sr.top)  + 'px';
+            el.style.left   = (fr.left + sr.left) + 'px';
+            el.style.right  = 'auto';
+            el.style.bottom = 'auto';
+            el.style.width  = sr.width  + 'px';
+            if (growable) {
+              el.style.height    = 'auto';
+              el.style.minHeight = sr.height + 'px';
+            } else {
+              el.style.height    = sr.height + 'px';
+              el.style.minHeight = '';
+            }
+            return true;
+          }
+        }
+      } catch (e) { /* cross-doc access can throw pre-load — fall back */ }
+      el.style.top = ''; el.style.left = ''; el.style.right = '';
+      el.style.bottom = ''; el.style.width = ''; el.style.height = '';
+      el.style.minHeight = '';
+      return false;
     }
+
+    function positionSlots() {
+      dockOnto(invitePanel, 'bd-ext-slot', true);
+      dockOnto(arrowDock,  'bd-arrows-slot', false);
+    }
+    window.addEventListener('resize', positionSlots);
 
     // goToVirtual + navigateSibling retired 2026-07-17. See comment above
     // the button-const block for context.
@@ -1299,18 +1357,6 @@
       };
     }
 
-    copyBtn.addEventListener('click', () => {
-      copyTextSmart(textarea.value).then((method) => {
-        console.log(`Copy: copied via ${method}`);
-        const original = copyBtn.textContent;
-        copyBtn.textContent = 'Copied ✓';
-        setTimeout(() => { copyBtn.textContent = original; }, 1400);
-      }).catch((err) => {
-        console.warn('Copy: all copy strategies failed', err);
-        setStatus('Copy failed — clipboard blocked (plain HTTP).');
-      });
-    });
-
     copyLinkBtn.addEventListener('click', () => {
       withUpdatePrompt(() => {
         try {
@@ -1339,9 +1385,22 @@
       const data = event.data;
       if (!data || typeof data !== 'object') return;
       switch (data.type) {
+        // Module status relay (2026-08-19) — the module keeps its own #status
+        // empty and posts here instead; module.parent IS this page, no wrapper
+        // hop. Only real errors carry text.
+        case 'BD_STATUS': {
+          if (typeof data.text === 'string' && data.text.trim()) {
+            setStatus(data.text.trim());
+          }
+          break;
+        }
         case 'BD_READY': {
           moduleReady = true;
-          setStatus('Module ready.');
+          setStatus('');   // errors-only status, matching bd_M_ABC
+          // Grid is laid out now — dock our chrome onto it. A couple of rAF
+          // ticks let fonts/steppers settle so the slot rects are final.
+          requestAnimationFrame(positionSlots);
+          requestAnimationFrame(() => requestAnimationFrame(positionSlots));
           // NOTE (music): bd_ui_config { hideControls: true } NOT sent here.
           // The music module owns its own controls (LH action buttons + right
           // stepper column) and this harness has no replacement steppers.
