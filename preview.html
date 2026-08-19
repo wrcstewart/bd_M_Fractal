@@ -139,44 +139,30 @@
     #bd-actions {
       display: flex;
       flex-direction: column;
-      gap: 6px;
+      gap: 4px;
     }
 
-    /* Jump to — solid muted amber. Darker/less saturated than the earlier
-       #FFD700 so it reads as invitation, not alarm. */
-    #bd-enter-btn {
-      background: #a07820;
-      color: #0a0a1a;
-      border: none;
-      border-radius: 3px;
-      padding: 6px 10px;
-      font-size: 12px;
-      cursor: pointer;
-      font-weight: bold;
-      font-family: sans-serif;
-    }
-
-    #bd-enter-btn:hover {
-      background: #c9a227;
-    }
-
-    /* Copy Link to — outlined muted amber, secondary. */
+    /* 2026-08-19 — B&W, identical to bd_M_ABC: white frame, black bg, white
+       font, matching the module's grid buttons. The old amber pair (solid
+       "Jump to" + outlined "Copy Link to") is retired — the two buttons now
+       read as equals, which is what they are. */
+    #bd-enter-btn,
     #bd-copy-link-btn {
-      background: transparent;
-      color: #a07820;
-      border: 1px solid #a07820;
+      background: #000;
+      color: #fff;
+      border: 1px solid #fff;
       border-radius: 3px;
-      padding: 5px 10px;             /* -1 px vertical to compensate for the border */
-      font-size: 12px;
+      padding: 4px 8px;
+      font-size: 11px;
       cursor: pointer;
       font-weight: bold;
-      font-family: sans-serif;
     }
 
+    #bd-enter-btn:hover,
     #bd-copy-link-btn:hover {
-      background: rgba(160, 120, 32, 0.15);
-      color: #c9a227;
-      border-color: #c9a227;
+      background: #1a1a1a;
+      color: #fff;
+      border-color: #fff;
     }
 
     /* Modal overlay — Copy Link update-script confirm (2026-07-15) */
@@ -377,12 +363,21 @@
 
     #script-input {
       width: 100%;
-      min-height: 160px;
+      /* 2026-08-19 — fills the side panel by default instead of opening at a
+         fixed 160px and waiting to be dragged. `flex: 1 1 auto` + `min-height:0`
+         lets it take every pixel the column has left once the stepper column
+         and status line have theirs; `resize: vertical` still works if you
+         want to shrink it. min-height is the floor for very short viewports. */
+      flex: 1 1 auto;
+      min-height: 120px;
       background: #0f0f18;
-      color: #cfcfc4;                     /* slightly desaturated from #e8e8e0 —
-                                             non-editable read cue (2026-07-15) */
-      border: 1px solid #2a2a3a;
-      border-bottom: 5px solid #5a4020;   /* dark-amber demarcator strip (2026-07-02) */
+      /* This textarea IS editable in bd_M_Fractal (the grammar has an axiom and
+         rules, not just numerics — see the note on the element). The desaturated
+         colour and default cursor inherited from bd_M_ABC were read-only cues
+         and said the wrong thing here. */
+      color: #e8e8e0;
+      border: 1px solid #555;
+      border-bottom: 5px solid #888;      /* B&W demarcator strip, matching bd_M_ABC */
       border-radius: 3px;
       font-family: 'Courier New', Courier, monospace;
       font-size: 16px;              /* ≥16 px avoids iOS auto-zoom on focus */
@@ -390,11 +385,10 @@
       padding: 8px;
       resize: vertical;
       outline: none;
-      flex: 0 0 auto;
-      margin-bottom: 7px;           /* small gap between amber bar and action row */
-      cursor: default;              /* not text-cursor — signals non-typable */
+      margin-bottom: 7px;           /* small gap between demarcator bar and steppers */
+      cursor: text;
     }
-    #script-input:focus { border-color: #4a9b8e; border-bottom-color: #5a4020; }
+    #script-input:focus { border-color: #aaa; border-bottom-color: #888; }
 
     /* Action row: Copy Link / Copy / ↓ / ↑ on one line; flex-wrap for narrow. */
     /* 2026-08-19 — docked ↓↑ arrows, lifted out of the side-panel action bar
