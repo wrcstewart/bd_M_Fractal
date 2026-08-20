@@ -111,7 +111,19 @@
       -webkit-user-select: none;
     }
     /* output panel buttons ~10% wider than the standard 54px */
-    .output-panel button { min-width: 59px; }
+    /* 2026-08-20 — and pinned to two per row at EVERY width. The ext slot is
+       an empty div sharing this grid row, so the row's height IS this panel's
+       height: once all four buttons fitted on one line (module wider than
+       ~740px) the row halved to ~46px, the slot stretched to that, and the
+       invite panel — pinned to the slot since f7eabec — had its Copy Link
+       button clipped off the bottom. Two per row keeps the row at ~85px, which
+       is what narrow windows already produced. flex-basis 50% minus half the
+       5px gap; min-width still wins on very narrow cells, where one per row is
+       the existing behaviour. */
+    .output-panel button {
+      min-width: 59px;
+      flex: 1 1 calc(50% - 2.5px);
+    }
     .panel button:hover:not(:disabled)  { background: #1a1a1a; }
     .panel button:disabled              { opacity: 0.4; cursor: not-allowed; }
     .panel button.flash                 { background: #243f3b; color: #a0e0d0; }
