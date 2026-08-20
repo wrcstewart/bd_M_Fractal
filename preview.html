@@ -116,14 +116,21 @@
       gap: 5px;
       overflow: hidden;
     }
-
-    /* Detailed invite — sits at the BOTTOM of the panel. */
-    #bd-invite-text {
-      margin: 0;
-      color: #bbb;
-      text-align: center;
-      font-size: 10px;
+    /* 2026-08-20 — lift the contents 6px. The panel BOX has to stay put (its
+       bottom edge aligns with the output panel's), so the children move rather
+       than the box: Copy Link's lower edge sat below the output panel's bottom.
+       A relative offset, not padding — padding would add 6px to the height the
+       panel needs, and the panel is now pinned to its cell with
+       overflow:hidden, so on a tight cell that would clip instead of lift. */
+    #bd-invite-panel > #bd-invite-target,
+    #bd-invite-panel > #bd-actions {
+      position: relative;
+      top: -6px;
     }
+
+    /* #bd-invite-text (the "You can use our Platform…" strapline) removed
+       2026-08-20, as in bd_M_ABC — it was the only thing making the panel
+       taller than its grid cell, so it overhung the bottom bar on iPad. */
 
     /* Title line — FIRST line of the panel and the ONE serif element on the
        page (bd_M_ABC convention), in dark gold. */
@@ -596,7 +603,6 @@
       <button id="bd-enter-btn"     type="button" title="Return to ButterflyDreaming carrying the current script">Jump to</button>
       <button id="bd-copy-link-btn" type="button" title="Copy a BD-return link to the clipboard">Copy Link to</button>
     </div>
-    <p id="bd-invite-text">You can use our Platform to explore, collaborate and save</p>
   </aside>
 
   <!-- 2026-07-15 — Copy-Link confirm dialog. Sliders write to the script
@@ -1097,7 +1103,10 @@
     }
 
     function positionSlots() {
-      dockOnto(invitePanel, 'bd-ext-slot', true);
+      // growable:false since 2026-08-20 — with the strapline gone the title +
+      // two buttons fit the cell, and pinning the height aligns the panel's
+      // bottom edge with the output panel's (they share a grid row).
+      dockOnto(invitePanel, 'bd-ext-slot', false);
       dockOnto(arrowDock,  'bd-arrows-slot', false);
     }
     window.addEventListener('resize', positionSlots);
